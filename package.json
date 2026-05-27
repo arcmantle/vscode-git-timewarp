@@ -1,0 +1,102 @@
+{
+  "name": "git-timewarp",
+  "displayName": "Git Timewarp",
+  "description": "Navigate through a file's history in-place with keyboard shortcuts — treating time as a navigable dimension in the editor.",
+  "version": "0.1.0",
+  "publisher": "eyeshare",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:gitTimewarp.back",
+    "onCommand:gitTimewarp.forward",
+    "onCommand:gitTimewarp.returnToPresent"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitTimewarp.back",
+        "title": "Git Timewarp: Step Back in History"
+      },
+      {
+        "command": "gitTimewarp.forward",
+        "title": "Git Timewarp: Step Forward in History"
+      },
+      {
+        "command": "gitTimewarp.returnToPresent",
+        "title": "Git Timewarp: Return to Present"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "gitTimewarp.back",
+        "key": "alt+[",
+        "mac": "alt+[",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "gitTimewarp.forward",
+        "key": "alt+]",
+        "mac": "alt+]",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "gitTimewarp.returnToPresent",
+        "key": "escape",
+        "when": "editorTextFocus && gitTimewarp.isTimeWarping"
+      }
+    ],
+    "configuration": {
+      "title": "Git Timewarp",
+      "properties": {
+        "gitTimewarp.cacheSize": {
+          "type": "number",
+          "default": 50,
+          "minimum": 5,
+          "description": "Number of file versions to keep in memory cache."
+        },
+        "gitTimewarp.followRenames": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow file renames when retrieving git history."
+        },
+        "gitTimewarp.includeLocalHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include VS Code local history entries in the timeline."
+        },
+        "gitTimewarp.maxCommits": {
+          "type": "number",
+          "default": 200,
+          "minimum": 10,
+          "description": "Maximum number of commits to load per file."
+        },
+        "gitTimewarp.debounceMs": {
+          "type": "number",
+          "default": 150,
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Debounce delay (ms) when navigating rapidly. Set to 0 for instant switching."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "lint": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}
