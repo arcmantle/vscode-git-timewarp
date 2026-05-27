@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { createHighlighter, type Highlighter, type BundledLanguage } from "shiki";
+import type { HighlightedLine } from "./messages.js";
 
 let highlighterInstance: Highlighter | null = null;
 let loadedThemeName: string | null = null;
@@ -140,7 +141,7 @@ async function getHighlighter(): Promise<{ highlighter: Highlighter; themeName: 
   return { highlighter: highlighterInstance, themeName: fallbackTheme };
 }
 
-export async function highlightCode(code: string, language: string): Promise<string[]> {
+export async function highlightCode(code: string, language: string): Promise<HighlightedLine[]> {
   try {
     const { highlighter, themeName } = await getHighlighter();
 
@@ -150,30 +151,16 @@ export async function highlightCode(code: string, language: string): Promise<str
 
     const tokens = highlighter.codeToTokens(code, { lang, theme: themeName });
 
-    // Convert tokens to HTML spans per line
-    return tokens.tokens.map((lineTokens) => {
-      return lineTokens
-        .map((token) => {
-          const escaped = escapeHtml(token.content);
-          if (token.color) {
-            return `<span style="color:${token.color}">${escaped}</span>`;
-          }
-          return escaped;
-        })
-        .join("");
-    });
+    return tokens.tokens.map((lineTokens) =>
+      lineTokens.map((token) => ({
+        content: token.content,
+        ...(token.color ? { color: token.color } : {}),
+      })),
+    );
   } catch {
-    // Fallback: return escaped plain text lines
-    return code.split("\n").map(escapeHtml);
+    // Fallback: return plain text tokens (one token per line)
+    return code.split("\n").map((line) => [{ content: line }]);
   }
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 export function invalidateHighlighter(): void {

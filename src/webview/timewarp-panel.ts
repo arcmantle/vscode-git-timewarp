@@ -6,7 +6,7 @@ import { Timeline } from "../history/timeline.js";
 import { getConfig } from "../config.js";
 import { highlightCode } from "./highlighter.js";
 import type { TimelineEntry } from "../history/types.js";
-import type { ToWebviewMessage, FromWebviewMessage } from "./messages.js";
+import type { ToWebviewMessage, FromWebviewMessage, HighlightedLine } from "./messages.js";
 
 export class TimewarpWebviewPanel {
   private panel: vscode.WebviewPanel | null = null;
@@ -16,7 +16,7 @@ export class TimewarpWebviewPanel {
   private disposables: vscode.Disposable[] = [];
   private currentContent: string = "";
   private previousContent: string | null = null;
-  private highlightCache = new Map<string, string[]>();
+  private highlightCache = new Map<string, HighlightedLine[]>();
   private gitCommitCount = 0;
   private visibleStepsBack = 0;
 

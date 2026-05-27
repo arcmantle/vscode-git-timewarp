@@ -1,3 +1,12 @@
+/** A single syntax-highlighted token (content + optional color). */
+export interface HighlightToken {
+  content: string;
+  color?: string;
+}
+
+/** A line of highlighted code is an array of tokens. */
+export type HighlightedLine = HighlightToken[];
+
 /** Messages sent from the extension host to the webview. */
 export type ToWebviewMessage =
   | InitMessage
@@ -7,7 +16,7 @@ export type ToWebviewMessage =
 
 export interface InitMessage {
   type: "init";
-  highlightedLines: string[];
+  highlightedLines: HighlightedLine[];
   language: string;
   fileName: string;
   scrollLine: number;
@@ -16,7 +25,7 @@ export interface InitMessage {
 
 export interface ContentMessage {
   type: "content";
-  highlightedLines: string[];
+  highlightedLines: HighlightedLine[];
   stepsBack: number;
   diffLines: number[];
   ago?: string;
@@ -28,7 +37,7 @@ export interface ContentMessage {
 
 export interface SplitContentMessage {
   type: "split-content";
-  highlightedLines: string[];
+  highlightedLines: HighlightedLine[];
   diffLines?: number[];
 }
 

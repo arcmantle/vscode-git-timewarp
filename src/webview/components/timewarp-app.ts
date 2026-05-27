@@ -1,7 +1,6 @@
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { ToWebviewMessage, FromWebviewMessage, DeletedRange } from "../messages.js";
+import type { ToWebviewMessage, FromWebviewMessage, DeletedRange, HighlightedLine } from "../messages.js";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -12,13 +11,13 @@ interface VsCodeApi {
 declare function acquireVsCodeApi(): VsCodeApi;
 
 interface CodeLine {
-  html: string;
+  tokens: HighlightedLine;
   diffChanged: boolean;
   blameText: string | null;
 }
 
 interface SplitLine {
-  html: string;
+  tokens: HighlightedLine;
   diffRemoved: boolean;
 }
 
@@ -54,7 +53,424 @@ export class TimewarpApp extends LitElement {
   private boundaryTimeout: ReturnType<typeof setTimeout> | undefined;
   private scrollLineOnInit = 0;
 
-  static styles = css`
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("message", this.handleExtensionMessage);
+    document.addEventListener("keydown", this.handleKeydown);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener("message", this.handleExtensionMessage);
+    document.removeEventListener("keydown", this.handleKeydown);
+  }
+
+  private handleExtensionMessage = (event: MessageEvent<ToWebviewMessage>) => {
+    const msg = event.data;
+    switch (msg.type) {
+      case "init":
+        this.totalCommits = msg.totalCommits || 1;
+        this.renderMainCode(msg.highlightedLines, [], {}, []);
+        this.statusText = msg.fileName + " \u00b7 " + this.totalCommits + " commits";
+        this.commitMessageText = "";
+        this.commitAuthorText = "";
+        this.timelinePct = 100;
+        this.renderTimelineDotPositions(this.totalCommits);
+        this.scrollLineOnInit = msg.scrollLine || 0;
+        break;
+
+      case "content": {
+        const showDeletions = this.splitMode !== "previous" ? (msg.deletedRanges || []) : [];
+        this.renderMainCode(msg.highlightedLines, msg.diffLines || [], msg.blame || {}, showDeletions);
+        if (msg.stepsBack === 0) {
+          this.statusText = "Present";
+          this.commitMessageText = "";
+          this.commitAuthorText = "";
+          this.timelinePct = 100;
+        } else {
+          this.statusText = msg.stepsBack + " back \u00b7 " + msg.ago;
+          this.commitMessageText = msg.commitMessage || "";
+          this.commitAuthorText = msg.author || "";
+          this.updateTimelinePct(msg.stepsBack);
+        }
+        break;
+      }
+
+      case "split-content":
+        this.renderSplitCode(msg.highlightedLines, msg.diffLines || []);
+        break;
+
+      case "boundary":
+        this.showBoundary(msg.direction === "oldest" ? "Beginning of file history" : "At present");
+        break;
+    }
+  };
+
+  private handleKeydown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      this.postMessage({ type: "exit" });
+    }
+    if (e.altKey && e.key === ",") {
+      e.preventDefault();
+      this.postMessage({ type: "scroll-back" });
+    }
+    if (e.altKey && e.key === ".") {
+      e.preventDefault();
+      this.postMessage({ type: "scroll-forward" });
+    }
+    if (e.altKey && e.code === "KeyS") {
+      e.preventDefault();
+      this.toggleSplit("present");
+    }
+    if (e.altKey && e.code === "KeyD") {
+      e.preventDefault();
+      this.toggleSplit("previous");
+    }
+  };
+
+  private postMessage(msg: FromWebviewMessage) {
+    this.vscode.postMessage(msg);
+  }
+
+  private handleWheel = (e: WheelEvent) => {
+    if (e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - this.lastScrollTime < 60) return;
+      this.lastScrollTime = now;
+      if (e.deltaY > 0) {
+        this.postMessage({ type: "scroll-back" });
+      } else {
+        this.postMessage({ type: "scroll-forward" });
+      }
+    }
+  };
+
+  private toggleSplit(mode: "present" | "previous") {
+    if (this.splitMode === mode) {
+      this.splitMode = "";
+      this.classList.remove("split-view");
+    } else {
+      this.splitMode = mode;
+      this.classList.add("split-view");
+
+      if (mode === "present") {
+        this.splitLabelText = "Present";
+        this.postMessage({ type: "request-present" });
+      } else {
+        this.splitLabelText = "Previous commit";
+        this.postMessage({ type: "request-previous" });
+      }
+    }
+  }
+
+  private renderMainCode(
+    highlightedLines: HighlightedLine[],
+    diffLines: number[],
+    blame: Record<number, string>,
+    deletedRanges: DeletedRange[],
+  ) {
+    const diffSet = new Set(diffLines);
+    this.totalLines = highlightedLines.length;
+
+    const blockStarts = new Set<number>();
+    for (let j = 0; j < diffLines.length; j++) {
+      if (j === 0 || diffLines[j] !== diffLines[j - 1] + 1) {
+        blockStarts.add(diffLines[j]);
+      }
+    }
+
+    const deletions = new Map<number, string[]>();
+    if (deletedRanges) {
+      for (const r of deletedRanges) {
+        const existing = deletions.get(r.afterLine) || [];
+        deletions.set(r.afterLine, existing.concat(r.lines));
+      }
+    }
+
+    this.mainLines = highlightedLines.map((tokens, i) => ({
+      tokens: tokens.length ? tokens : [{ content: " " }],
+      diffChanged: diffSet.has(i),
+      blameText: (blockStarts.has(i) && blame[i]) ? blame[i] : null,
+    }));
+    this.mainDeletions = deletions;
+    this.computeMinimapMarkers(diffLines, deletedRanges);
+    this.syncPaneHeights();
+  }
+
+  private renderSplitCode(highlightedLines: HighlightedLine[], diffLines: number[]) {
+    if (!highlightedLines) return;
+    const diffSet = new Set(diffLines || []);
+    this.splitLines = highlightedLines.map((tokens, i) => ({
+      tokens: tokens.length ? tokens : [{ content: " " }],
+      diffRemoved: diffSet.has(i),
+    }));
+    this.computeSplitMinimapMarkers(diffLines || [], highlightedLines.length);
+    this.syncPaneHeights();
+  }
+
+  private syncPaneHeights() {
+    if (!this.splitMode) return;
+    this.updateComplete.then(() => {
+      const codeEl = this.shadowRoot?.getElementById("code");
+      const codeSplitEl = this.shadowRoot?.getElementById("code-split");
+      if (!codeEl || !codeSplitEl) return;
+      codeEl.style.minHeight = "";
+      codeSplitEl.style.minHeight = "";
+      const h1 = codeEl.scrollHeight;
+      const h2 = codeSplitEl.scrollHeight;
+      const maxH = Math.max(h1, h2);
+      codeEl.style.minHeight = maxH + "px";
+      codeSplitEl.style.minHeight = maxH + "px";
+    });
+  }
+
+  private computeMinimapMarkers(diffLines: number[], deletedRanges: DeletedRange[]) {
+    const markers: MinimapMarker[] = [];
+    if (this.totalLines > 0) {
+      if (diffLines.length) {
+        let rangeStart = diffLines[0];
+        let rangeEnd = diffLines[0];
+        for (let i = 1; i <= diffLines.length; i++) {
+          if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+            rangeEnd = diffLines[i];
+          } else {
+            markers.push({
+              topPct: (rangeStart / this.totalLines) * 100,
+              heightPct: ((rangeEnd - rangeStart + 1) / this.totalLines) * 100,
+              type: "modified",
+            });
+            if (i < diffLines.length) {
+              rangeStart = diffLines[i];
+              rangeEnd = diffLines[i];
+            }
+          }
+        }
+      }
+      if (deletedRanges && deletedRanges.length) {
+        for (const r of deletedRanges) {
+          markers.push({
+            topPct: (r.afterLine / this.totalLines) * 100,
+            heightPct: 0,
+            type: "deleted",
+          });
+        }
+      }
+    }
+    this.minimapMarkers = markers;
+  }
+
+  private computeSplitMinimapMarkers(diffLines: number[], total: number) {
+    if (!diffLines.length || total === 0) {
+      this.splitMinimapMarkers = [];
+      return;
+    }
+    const markers: MinimapMarker[] = [];
+    let rangeStart = diffLines[0];
+    let rangeEnd = diffLines[0];
+    for (let i = 1; i <= diffLines.length; i++) {
+      if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+        rangeEnd = diffLines[i];
+      } else {
+        markers.push({
+          topPct: (rangeStart / total) * 100,
+          heightPct: ((rangeEnd - rangeStart + 1) / total) * 100,
+          type: "deleted",
+        });
+        if (i < diffLines.length) {
+          rangeStart = diffLines[i];
+          rangeEnd = diffLines[i];
+        }
+      }
+    }
+    this.splitMinimapMarkers = markers;
+  }
+
+  private updateTimelinePct(stepsBack: number) {
+    if (this.totalCommits <= 1) {
+      this.timelinePct = 100;
+      return;
+    }
+    this.timelinePct = ((this.totalCommits - stepsBack) / this.totalCommits) * 100;
+  }
+
+  private renderTimelineDotPositions(count: number) {
+    if (count <= 1) {
+      this.timelineDots = [];
+      return;
+    }
+    const maxDots = 60;
+    const dotsToRender = Math.min(count, maxDots);
+    const dots: number[] = [];
+    for (let i = 0; i < dotsToRender; i++) {
+      const commitIdx = dotsToRender === count ? i : Math.round(i * (count - 1) / (dotsToRender - 1));
+      const pct = (commitIdx / count) * 100;
+      dots.push(pct);
+    }
+    this.timelineDots = dots;
+  }
+
+  private showBoundary(text: string) {
+    this.boundaryText = text;
+    this.boundaryVisible = true;
+    clearTimeout(this.boundaryTimeout);
+    this.boundaryTimeout = setTimeout(() => {
+      this.boundaryVisible = false;
+    }, 1500);
+  }
+
+  private scrollToLine(line: number) {
+    const historyScroll = this.shadowRoot?.getElementById("history-scroll");
+    if (!historyScroll) return;
+    const lineHeight = parseFloat(getComputedStyle(this).lineHeight) || 21;
+    historyScroll.scrollTop = line * lineHeight;
+  }
+
+  private handleHistoryScroll = () => {
+    if (this.splitMode && !this.syncingScroll) {
+      this.syncingScroll = true;
+      const historyScroll = this.shadowRoot?.getElementById("history-scroll");
+      const splitScroll = this.shadowRoot?.getElementById("split-scroll");
+      if (historyScroll && splitScroll) {
+        splitScroll.scrollTop = historyScroll.scrollTop;
+      }
+      this.syncingScroll = false;
+    }
+  };
+
+  private handleSplitScroll = () => {
+    if (this.splitMode && !this.syncingScroll) {
+      this.syncingScroll = true;
+      const historyScroll = this.shadowRoot?.getElementById("history-scroll");
+      const splitScroll = this.shadowRoot?.getElementById("split-scroll");
+      if (historyScroll && splitScroll) {
+        historyScroll.scrollTop = splitScroll.scrollTop;
+      }
+      this.syncingScroll = false;
+    }
+  };
+
+  protected updated() {
+    if (this.scrollLineOnInit > 0) {
+      const line = this.scrollLineOnInit;
+      this.scrollLineOnInit = 0;
+      requestAnimationFrame(() => this.scrollToLine(line));
+    }
+  }
+
+  render() {
+    return html`
+      <div id="status-bar">
+        <span class="position">${this.statusText}</span>
+        <span class="actions">
+          <button
+            class=${this.splitMode === "present" ? "active" : ""}
+            title="Compare with present file (Alt+S)"
+            @click=${() => this.toggleSplit("present")}
+          >vs Present</button>
+          <button
+            class=${this.splitMode === "previous" ? "active" : ""}
+            title="Compare with previous commit (Alt+D)"
+            @click=${() => this.toggleSplit("previous")}
+          >vs Previous</button>
+        </span>
+        <span class="hint">Alt+Scroll · Escape to exit</span>
+      </div>
+      <div id="timeline">
+        <span id="timeline-label-left">oldest</span>
+        <div id="timeline-track">
+          <div id="timeline-progress" style="width:${this.timelinePct}%"></div>
+          <div id="timeline-cursor" style="left:${this.timelinePct}%"></div>
+          ${this.timelineDots.map(
+            (pct) => html`<div class="timeline-dot" style="left:${pct}%"></div>`,
+          )}
+        </div>
+        <span id="timeline-label-right">now</span>
+      </div>
+      <div id="editors-wrapper">
+        <div class="editor-pane" id="split-pane">
+          <div class="pane-label">${this.splitLabelText}</div>
+          <div class="pane-body">
+            <div class="pane-scroll" id="split-scroll"
+              @wheel=${this.handleWheel}
+              @scroll=${this.handleSplitScroll}
+            >
+              <div class="code-block" id="code-split">${this.renderSplitLines()}</div>
+            </div>
+            <div class="minimap minimap-split">${this.renderMinimapMarkers(this.splitMinimapMarkers)}</div>
+          </div>
+        </div>
+        <div class="editor-pane" id="history-pane">
+          ${this.splitMode ? html`<div class="pane-label">Viewing</div>` : nothing}
+          <div class="pane-body">
+            <div class="pane-scroll" id="history-scroll"
+              @wheel=${this.handleWheel}
+              @scroll=${this.handleHistoryScroll}
+            >
+              <div class="code-block" id="code">${this.renderCodeLines()}</div>
+            </div>
+            <div class="minimap">${this.renderMinimapMarkers(this.minimapMarkers)}</div>
+          </div>
+        </div>
+      </div>
+      <div id="commit-bar">
+        <span class="message">${this.commitMessageText}</span>
+        <span class="author">${this.commitAuthorText}</span>
+      </div>
+      <div id="boundary-indicator" class=${this.boundaryVisible ? "visible" : ""}>
+        ${this.boundaryText}
+      </div>
+    `;
+  }
+
+  private renderCodeLines(): TemplateResult[] {
+    const result: TemplateResult[] = [];
+    for (let i = 0; i < this.mainLines.length; i++) {
+      const deletedLines = this.mainDeletions.get(i);
+      if (deletedLines) {
+        for (const line of deletedLines) {
+          result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
+        }
+      }
+      const { tokens, diffChanged, blameText } = this.mainLines[i];
+      result.push(html`<span class="line ${diffChanged ? "diff-changed" : ""}"><span class="line-content">${this.renderTokens(tokens)}</span>${blameText ? html`<span class="blame-annotation">${blameText}</span>` : nothing}</span>`);
+    }
+    // Trailing deletions
+    const trailingDeletions = this.mainDeletions.get(this.mainLines.length);
+    if (trailingDeletions) {
+      for (const line of trailingDeletions) {
+        result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
+      }
+    }
+    return result;
+  }
+
+  private renderSplitLines(): TemplateResult[] {
+    return this.splitLines.map(
+      ({ tokens, diffRemoved }) =>
+        html`<span class="line ${diffRemoved ? "diff-removed" : ""}">${this.renderTokens(tokens)}</span>`,
+    );
+  }
+
+  private renderTokens(tokens: HighlightedLine): TemplateResult[] {
+    return tokens.map((t) =>
+      t.color
+        ? html`<span style="color:${t.color}">${t.content}</span>`
+        : html`${t.content}`,
+    );
+  }
+
+  private renderMinimapMarkers(markers: MinimapMarker[]): TemplateResult[] {
+    return markers.map((m) =>
+      html`<div
+        class=${m.type === "modified" ? "minimap-marker" : "minimap-marker-removed"}
+        style="top:${m.topPct}%;height:${m.heightPct ? `${m.heightPct}%` : "3px"}"
+      ></div>`,
+    );
+  }
+
+    static styles = css`
     :host {
       display: block;
       font-family: var(--vscode-editor-font-family, 'Fira Code', 'Cascadia Code', monospace);
@@ -421,413 +837,4 @@ export class TimewarpApp extends LitElement {
       opacity: 1;
     }
   `;
-
-  connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("message", this.handleExtensionMessage);
-    document.addEventListener("keydown", this.handleKeydown);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    window.removeEventListener("message", this.handleExtensionMessage);
-    document.removeEventListener("keydown", this.handleKeydown);
-  }
-
-  private handleExtensionMessage = (event: MessageEvent<ToWebviewMessage>) => {
-    const msg = event.data;
-    switch (msg.type) {
-      case "init":
-        this.totalCommits = msg.totalCommits || 1;
-        this.renderMainCode(msg.highlightedLines, [], {}, []);
-        this.statusText = msg.fileName + " \u00b7 " + this.totalCommits + " commits";
-        this.commitMessageText = "";
-        this.commitAuthorText = "";
-        this.timelinePct = 100;
-        this.renderTimelineDotPositions(this.totalCommits);
-        this.scrollLineOnInit = msg.scrollLine || 0;
-        break;
-
-      case "content": {
-        const showDeletions = this.splitMode !== "previous" ? (msg.deletedRanges || []) : [];
-        this.renderMainCode(msg.highlightedLines, msg.diffLines || [], msg.blame || {}, showDeletions);
-        if (msg.stepsBack === 0) {
-          this.statusText = "Present";
-          this.commitMessageText = "";
-          this.commitAuthorText = "";
-          this.timelinePct = 100;
-        } else {
-          this.statusText = msg.stepsBack + " back \u00b7 " + msg.ago;
-          this.commitMessageText = msg.commitMessage || "";
-          this.commitAuthorText = msg.author || "";
-          this.updateTimelinePct(msg.stepsBack);
-        }
-        break;
-      }
-
-      case "split-content":
-        this.renderSplitCode(msg.highlightedLines, msg.diffLines || []);
-        break;
-
-      case "boundary":
-        this.showBoundary(msg.direction === "oldest" ? "Beginning of file history" : "At present");
-        break;
-    }
-  };
-
-  private handleKeydown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      this.postMessage({ type: "exit" });
-    }
-    if (e.altKey && e.key === ",") {
-      e.preventDefault();
-      this.postMessage({ type: "scroll-back" });
-    }
-    if (e.altKey && e.key === ".") {
-      e.preventDefault();
-      this.postMessage({ type: "scroll-forward" });
-    }
-    if (e.altKey && e.code === "KeyS") {
-      e.preventDefault();
-      this.toggleSplit("present");
-    }
-    if (e.altKey && e.code === "KeyD") {
-      e.preventDefault();
-      this.toggleSplit("previous");
-    }
-  };
-
-  private postMessage(msg: FromWebviewMessage) {
-    this.vscode.postMessage(msg);
-  }
-
-  private handleWheel = (e: WheelEvent) => {
-    if (e.altKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      const now = Date.now();
-      if (now - this.lastScrollTime < 60) return;
-      this.lastScrollTime = now;
-      if (e.deltaY > 0) {
-        this.postMessage({ type: "scroll-back" });
-      } else {
-        this.postMessage({ type: "scroll-forward" });
-      }
-    }
-  };
-
-  private toggleSplit(mode: "present" | "previous") {
-    if (this.splitMode === mode) {
-      this.splitMode = "";
-      this.classList.remove("split-view");
-    } else {
-      this.splitMode = mode;
-      this.classList.add("split-view");
-
-      if (mode === "present") {
-        this.splitLabelText = "Present";
-        this.postMessage({ type: "request-present" });
-      } else {
-        this.splitLabelText = "Previous commit";
-        this.postMessage({ type: "request-previous" });
-      }
-    }
-  }
-
-  private renderMainCode(
-    htmlLines: string[],
-    diffLines: number[],
-    blame: Record<number, string>,
-    deletedRanges: DeletedRange[],
-  ) {
-    const diffSet = new Set(diffLines);
-    this.totalLines = htmlLines.length;
-
-    const blockStarts = new Set<number>();
-    for (let j = 0; j < diffLines.length; j++) {
-      if (j === 0 || diffLines[j] !== diffLines[j - 1] + 1) {
-        blockStarts.add(diffLines[j]);
-      }
-    }
-
-    const deletions = new Map<number, string[]>();
-    if (deletedRanges) {
-      for (const r of deletedRanges) {
-        const existing = deletions.get(r.afterLine) || [];
-        deletions.set(r.afterLine, existing.concat(r.lines));
-      }
-    }
-
-    this.mainLines = htmlLines.map((lineHtml, i) => ({
-      html: lineHtml || " ",
-      diffChanged: diffSet.has(i),
-      blameText: (blockStarts.has(i) && blame[i]) ? blame[i] : null,
-    }));
-    this.mainDeletions = deletions;
-    this.computeMinimapMarkers(diffLines, deletedRanges);
-    this.syncPaneHeights();
-  }
-
-  private renderSplitCode(htmlLines: string[], diffLines: number[]) {
-    if (!htmlLines) return;
-    const diffSet = new Set(diffLines || []);
-    this.splitLines = htmlLines.map((lineHtml, i) => ({
-      html: lineHtml || " ",
-      diffRemoved: diffSet.has(i),
-    }));
-    this.computeSplitMinimapMarkers(diffLines || [], htmlLines.length);
-    this.syncPaneHeights();
-  }
-
-  private syncPaneHeights() {
-    if (!this.splitMode) return;
-    this.updateComplete.then(() => {
-      const codeEl = this.shadowRoot?.getElementById("code");
-      const codeSplitEl = this.shadowRoot?.getElementById("code-split");
-      if (!codeEl || !codeSplitEl) return;
-      codeEl.style.minHeight = "";
-      codeSplitEl.style.minHeight = "";
-      const h1 = codeEl.scrollHeight;
-      const h2 = codeSplitEl.scrollHeight;
-      const maxH = Math.max(h1, h2);
-      codeEl.style.minHeight = maxH + "px";
-      codeSplitEl.style.minHeight = maxH + "px";
-    });
-  }
-
-  private computeMinimapMarkers(diffLines: number[], deletedRanges: DeletedRange[]) {
-    const markers: MinimapMarker[] = [];
-    if (this.totalLines > 0) {
-      if (diffLines.length) {
-        let rangeStart = diffLines[0];
-        let rangeEnd = diffLines[0];
-        for (let i = 1; i <= diffLines.length; i++) {
-          if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
-            rangeEnd = diffLines[i];
-          } else {
-            markers.push({
-              topPct: (rangeStart / this.totalLines) * 100,
-              heightPct: ((rangeEnd - rangeStart + 1) / this.totalLines) * 100,
-              type: "modified",
-            });
-            if (i < diffLines.length) {
-              rangeStart = diffLines[i];
-              rangeEnd = diffLines[i];
-            }
-          }
-        }
-      }
-      if (deletedRanges && deletedRanges.length) {
-        for (const r of deletedRanges) {
-          markers.push({
-            topPct: (r.afterLine / this.totalLines) * 100,
-            heightPct: 0,
-            type: "deleted",
-          });
-        }
-      }
-    }
-    this.minimapMarkers = markers;
-  }
-
-  private computeSplitMinimapMarkers(diffLines: number[], total: number) {
-    if (!diffLines.length || total === 0) {
-      this.splitMinimapMarkers = [];
-      return;
-    }
-    const markers: MinimapMarker[] = [];
-    let rangeStart = diffLines[0];
-    let rangeEnd = diffLines[0];
-    for (let i = 1; i <= diffLines.length; i++) {
-      if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
-        rangeEnd = diffLines[i];
-      } else {
-        markers.push({
-          topPct: (rangeStart / total) * 100,
-          heightPct: ((rangeEnd - rangeStart + 1) / total) * 100,
-          type: "deleted",
-        });
-        if (i < diffLines.length) {
-          rangeStart = diffLines[i];
-          rangeEnd = diffLines[i];
-        }
-      }
-    }
-    this.splitMinimapMarkers = markers;
-  }
-
-  private updateTimelinePct(stepsBack: number) {
-    if (this.totalCommits <= 1) {
-      this.timelinePct = 100;
-      return;
-    }
-    this.timelinePct = ((this.totalCommits - stepsBack) / this.totalCommits) * 100;
-  }
-
-  private renderTimelineDotPositions(count: number) {
-    if (count <= 1) {
-      this.timelineDots = [];
-      return;
-    }
-    const maxDots = 60;
-    const dotsToRender = Math.min(count, maxDots);
-    const dots: number[] = [];
-    for (let i = 0; i < dotsToRender; i++) {
-      const commitIdx = dotsToRender === count ? i : Math.round(i * (count - 1) / (dotsToRender - 1));
-      const pct = (commitIdx / count) * 100;
-      dots.push(pct);
-    }
-    this.timelineDots = dots;
-  }
-
-  private showBoundary(text: string) {
-    this.boundaryText = text;
-    this.boundaryVisible = true;
-    clearTimeout(this.boundaryTimeout);
-    this.boundaryTimeout = setTimeout(() => {
-      this.boundaryVisible = false;
-    }, 1500);
-  }
-
-  private scrollToLine(line: number) {
-    const historyScroll = this.shadowRoot?.getElementById("history-scroll");
-    if (!historyScroll) return;
-    const lineHeight = parseFloat(getComputedStyle(this).lineHeight) || 21;
-    historyScroll.scrollTop = line * lineHeight;
-  }
-
-  private handleHistoryScroll = () => {
-    if (this.splitMode && !this.syncingScroll) {
-      this.syncingScroll = true;
-      const historyScroll = this.shadowRoot?.getElementById("history-scroll");
-      const splitScroll = this.shadowRoot?.getElementById("split-scroll");
-      if (historyScroll && splitScroll) {
-        splitScroll.scrollTop = historyScroll.scrollTop;
-      }
-      this.syncingScroll = false;
-    }
-  };
-
-  private handleSplitScroll = () => {
-    if (this.splitMode && !this.syncingScroll) {
-      this.syncingScroll = true;
-      const historyScroll = this.shadowRoot?.getElementById("history-scroll");
-      const splitScroll = this.shadowRoot?.getElementById("split-scroll");
-      if (historyScroll && splitScroll) {
-        historyScroll.scrollTop = splitScroll.scrollTop;
-      }
-      this.syncingScroll = false;
-    }
-  };
-
-  protected updated() {
-    if (this.scrollLineOnInit > 0) {
-      const line = this.scrollLineOnInit;
-      this.scrollLineOnInit = 0;
-      requestAnimationFrame(() => this.scrollToLine(line));
-    }
-  }
-
-  render() {
-    return html`
-      <div id="status-bar">
-        <span class="position">${this.statusText}</span>
-        <span class="actions">
-          <button
-            class=${this.splitMode === "present" ? "active" : ""}
-            title="Compare with present file (Alt+S)"
-            @click=${() => this.toggleSplit("present")}
-          >vs Present</button>
-          <button
-            class=${this.splitMode === "previous" ? "active" : ""}
-            title="Compare with previous commit (Alt+D)"
-            @click=${() => this.toggleSplit("previous")}
-          >vs Previous</button>
-        </span>
-        <span class="hint">Alt+Scroll · Escape to exit</span>
-      </div>
-      <div id="timeline">
-        <span id="timeline-label-left">oldest</span>
-        <div id="timeline-track">
-          <div id="timeline-progress" style="width:${this.timelinePct}%"></div>
-          <div id="timeline-cursor" style="left:${this.timelinePct}%"></div>
-          ${this.timelineDots.map(
-            (pct) => html`<div class="timeline-dot" style="left:${pct}%"></div>`,
-          )}
-        </div>
-        <span id="timeline-label-right">now</span>
-      </div>
-      <div id="editors-wrapper">
-        <div class="editor-pane" id="split-pane">
-          <div class="pane-label">${this.splitLabelText}</div>
-          <div class="pane-body">
-            <div class="pane-scroll" id="split-scroll"
-              @wheel=${this.handleWheel}
-              @scroll=${this.handleSplitScroll}
-            >
-              <div class="code-block" id="code-split">${this.renderSplitLines()}</div>
-            </div>
-            <div class="minimap minimap-split">${this.renderMinimapMarkers(this.splitMinimapMarkers)}</div>
-          </div>
-        </div>
-        <div class="editor-pane" id="history-pane">
-          ${this.splitMode ? html`<div class="pane-label">Viewing</div>` : nothing}
-          <div class="pane-body">
-            <div class="pane-scroll" id="history-scroll"
-              @wheel=${this.handleWheel}
-              @scroll=${this.handleHistoryScroll}
-            >
-              <div class="code-block" id="code">${this.renderCodeLines()}</div>
-            </div>
-            <div class="minimap">${this.renderMinimapMarkers(this.minimapMarkers)}</div>
-          </div>
-        </div>
-      </div>
-      <div id="commit-bar">
-        <span class="message">${this.commitMessageText}</span>
-        <span class="author">${this.commitAuthorText}</span>
-      </div>
-      <div id="boundary-indicator" class=${this.boundaryVisible ? "visible" : ""}>
-        ${this.boundaryText}
-      </div>
-    `;
-  }
-
-  private renderCodeLines(): TemplateResult[] {
-    const result: TemplateResult[] = [];
-    for (let i = 0; i < this.mainLines.length; i++) {
-      const deletedLines = this.mainDeletions.get(i);
-      if (deletedLines) {
-        for (const line of deletedLines) {
-          result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
-        }
-      }
-      const { html: lineHtml, diffChanged, blameText } = this.mainLines[i];
-      result.push(html`<span class="line ${diffChanged ? "diff-changed" : ""}"><span class="line-content">${unsafeHTML(lineHtml)}</span>${blameText ? html`<span class="blame-annotation">${blameText}</span>` : nothing}</span>`);
-    }
-    // Trailing deletions
-    const trailingDeletions = this.mainDeletions.get(this.mainLines.length);
-    if (trailingDeletions) {
-      for (const line of trailingDeletions) {
-        result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
-      }
-    }
-    return result;
-  }
-
-  private renderSplitLines(): TemplateResult[] {
-    return this.splitLines.map(
-      ({ html: lineHtml, diffRemoved }) =>
-        html`<span class="line ${diffRemoved ? "diff-removed" : ""}">${unsafeHTML(lineHtml)}</span>`,
-    );
-  }
-
-  private renderMinimapMarkers(markers: MinimapMarker[]): TemplateResult[] {
-    return markers.map((m) =>
-      html`<div
-        class=${m.type === "modified" ? "minimap-marker" : "minimap-marker-removed"}
-        style="top:${m.topPct}%;height:${m.heightPct ? `${m.heightPct}%` : "3px"}"
-      ></div>`,
-    );
-  }
 }
