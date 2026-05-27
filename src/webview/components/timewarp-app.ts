@@ -1,5 +1,6 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -8,6 +9,23 @@ interface VsCodeApi {
 }
 
 declare function acquireVsCodeApi(): VsCodeApi;
+
+interface CodeLine {
+  html: string;
+  diffChanged: boolean;
+  blameText: string | null;
+}
+
+interface SplitLine {
+  html: string;
+  diffRemoved: boolean;
+}
+
+interface MinimapMarker {
+  topPct: number;
+  heightPct: number;
+  type: "modified" | "deleted";
+}
 
 @customElement("timewarp-app")
 export class TimewarpApp extends LitElement {
@@ -19,11 +37,12 @@ export class TimewarpApp extends LitElement {
   @state() private commitMessageText = "";
   @state() private commitAuthorText = "";
   @state() private splitMode: "" | "present" | "previous" = "";
-  @state() private codeHtml = "";
-  @state() private codeSplitHtml = "";
+  @state() private mainLines: CodeLine[] = [];
+  @state() private mainDeletions = new Map<number, string[]>();
+  @state() private splitLines: SplitLine[] = [];
   @state() private splitLabelText = "Present";
-  @state() private minimapHtml = "";
-  @state() private minimapSplitHtml = "";
+  @state() private minimapMarkers: MinimapMarker[] = [];
+  @state() private splitMinimapMarkers: MinimapMarker[] = [];
   @state() private boundaryText = "";
   @state() private boundaryVisible = false;
   @state() private timelinePct = 100;
@@ -534,49 +553,24 @@ export class TimewarpApp extends LitElement {
       }
     }
 
-    let result = "";
-    for (let i = 0; i < htmlLines.length; i++) {
-      if (deletions.has(i)) {
-        const lines = deletions.get(i)!;
-        for (const line of lines) {
-          const escaped = (line || " ").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-          result += '<span class="deletion-indicator">' + escaped + "</span>";
-        }
-      }
-
-      const diffClass = diffSet.has(i) ? " diff-changed" : "";
-      let blameHtml = "";
-      if (blockStarts.has(i) && blame[i]) {
-        blameHtml = '<span class="blame-annotation">' + blame[i] + "</span>";
-      }
-      result += '<span class="line' + diffClass + '"><span class="line-content">' + (htmlLines[i] || " ") + "</span>" + blameHtml + "</span>";
-    }
-
-    if (deletions.has(htmlLines.length)) {
-      const lines = deletions.get(htmlLines.length)!;
-      for (const line of lines) {
-        const escaped = (line || " ").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        result += '<span class="deletion-indicator">' + escaped + "</span>";
-      }
-    }
-
-    this.codeHtml = result;
-    this.updateMinimap(diffLines, deletedRanges);
+    this.mainLines = htmlLines.map((lineHtml, i) => ({
+      html: lineHtml || " ",
+      diffChanged: diffSet.has(i),
+      blameText: (blockStarts.has(i) && blame[i]) ? blame[i] : null,
+    }));
+    this.mainDeletions = deletions;
+    this.computeMinimapMarkers(diffLines, deletedRanges);
     this.syncPaneHeights();
   }
 
   private renderSplitCode(htmlLines: string[], diffLines: number[]) {
     if (!htmlLines) return;
     const diffSet = new Set(diffLines || []);
-    const splitTotalLines = htmlLines.length;
-    this.codeSplitHtml = htmlLines
-      .map((lineHtml, i) => {
-        const diffClass = diffSet.has(i) ? " diff-removed" : "";
-        return '<span class="line' + diffClass + '">' + (lineHtml || " ") + "</span>";
-      })
-      .join("");
-
-    this.updateSplitMinimap(diffLines || [], splitTotalLines);
+    this.splitLines = htmlLines.map((lineHtml, i) => ({
+      html: lineHtml || " ",
+      diffRemoved: diffSet.has(i),
+    }));
+    this.computeSplitMinimapMarkers(diffLines || [], htmlLines.length);
     this.syncPaneHeights();
   }
 
@@ -596,71 +590,65 @@ export class TimewarpApp extends LitElement {
     });
   }
 
-  private updateMinimap(diffLines: number[], deletedRanges: { afterLine: number; lines: string[] }[]) {
-    this.updateComplete.then(() => {
-      const minimapEl = this.shadowRoot?.querySelector<HTMLElement>(".minimap:not(.minimap-split)");
-      if (!minimapEl) return;
-      const minimapHeight = minimapEl.clientHeight;
-      const markers: string[] = [];
-
-      if (this.totalLines > 0) {
-        if (diffLines.length) {
-          let rangeStart = diffLines[0];
-          let rangeEnd = diffLines[0];
-          for (let i = 1; i <= diffLines.length; i++) {
-            if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+  private computeMinimapMarkers(diffLines: number[], deletedRanges: { afterLine: number; lines: string[] }[]) {
+    const markers: MinimapMarker[] = [];
+    if (this.totalLines > 0) {
+      if (diffLines.length) {
+        let rangeStart = diffLines[0];
+        let rangeEnd = diffLines[0];
+        for (let i = 1; i <= diffLines.length; i++) {
+          if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+            rangeEnd = diffLines[i];
+          } else {
+            markers.push({
+              topPct: (rangeStart / this.totalLines) * 100,
+              heightPct: ((rangeEnd - rangeStart + 1) / this.totalLines) * 100,
+              type: "modified",
+            });
+            if (i < diffLines.length) {
+              rangeStart = diffLines[i];
               rangeEnd = diffLines[i];
-            } else {
-              const top = (rangeStart / this.totalLines) * minimapHeight;
-              const height = Math.max(3, ((rangeEnd - rangeStart + 1) / this.totalLines) * minimapHeight);
-              markers.push('<div class="minimap-marker" style="top:' + top + "px;height:" + height + 'px"></div>');
-              if (i < diffLines.length) {
-                rangeStart = diffLines[i];
-                rangeEnd = diffLines[i];
-              }
             }
           }
         }
-
-        if (deletedRanges && deletedRanges.length) {
-          for (const r of deletedRanges) {
-            const top = (r.afterLine / this.totalLines) * minimapHeight;
-            markers.push('<div class="minimap-marker-removed" style="top:' + top + 'px;height:3px"></div>');
-          }
+      }
+      if (deletedRanges && deletedRanges.length) {
+        for (const r of deletedRanges) {
+          markers.push({
+            topPct: (r.afterLine / this.totalLines) * 100,
+            heightPct: 0,
+            type: "deleted",
+          });
         }
       }
-
-      this.minimapHtml = markers.join("");
-    });
+    }
+    this.minimapMarkers = markers;
   }
 
-  private updateSplitMinimap(diffLines: number[], total: number) {
-    this.updateComplete.then(() => {
-      if (!diffLines.length || total === 0) {
-        this.minimapSplitHtml = "";
-        return;
-      }
-      const minimapEl = this.shadowRoot?.querySelector<HTMLElement>(".minimap-split");
-      if (!minimapEl) return;
-      const minimapHeight = minimapEl.clientHeight;
-      const markers: string[] = [];
-      let rangeStart = diffLines[0];
-      let rangeEnd = diffLines[0];
-      for (let i = 1; i <= diffLines.length; i++) {
-        if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+  private computeSplitMinimapMarkers(diffLines: number[], total: number) {
+    if (!diffLines.length || total === 0) {
+      this.splitMinimapMarkers = [];
+      return;
+    }
+    const markers: MinimapMarker[] = [];
+    let rangeStart = diffLines[0];
+    let rangeEnd = diffLines[0];
+    for (let i = 1; i <= diffLines.length; i++) {
+      if (i < diffLines.length && diffLines[i] === rangeEnd + 1) {
+        rangeEnd = diffLines[i];
+      } else {
+        markers.push({
+          topPct: (rangeStart / total) * 100,
+          heightPct: ((rangeEnd - rangeStart + 1) / total) * 100,
+          type: "deleted",
+        });
+        if (i < diffLines.length) {
+          rangeStart = diffLines[i];
           rangeEnd = diffLines[i];
-        } else {
-          const top = (rangeStart / total) * minimapHeight;
-          const height = Math.max(3, ((rangeEnd - rangeStart + 1) / total) * minimapHeight);
-          markers.push('<div class="minimap-marker-removed" style="top:' + top + "px;height:" + height + 'px"></div>');
-          if (i < diffLines.length) {
-            rangeStart = diffLines[i];
-            rangeEnd = diffLines[i];
-          }
         }
       }
-      this.minimapSplitHtml = markers.join("");
-    });
+    }
+    this.splitMinimapMarkers = markers;
   }
 
   private updateTimelinePct(stepsBack: number) {
@@ -772,9 +760,9 @@ export class TimewarpApp extends LitElement {
               @wheel=${this.handleWheel}
               @scroll=${this.handleSplitScroll}
             >
-              <div class="code-block" id="code-split" .innerHTML=${this.codeSplitHtml}></div>
+              <div class="code-block" id="code-split">${this.renderSplitLines()}</div>
             </div>
-            <div class="minimap minimap-split" .innerHTML=${this.minimapSplitHtml}></div>
+            <div class="minimap minimap-split">${this.renderMinimapMarkers(this.splitMinimapMarkers)}</div>
           </div>
         </div>
         <div class="editor-pane" id="history-pane">
@@ -784,9 +772,9 @@ export class TimewarpApp extends LitElement {
               @wheel=${this.handleWheel}
               @scroll=${this.handleHistoryScroll}
             >
-              <div class="code-block" id="code" .innerHTML=${this.codeHtml}></div>
+              <div class="code-block" id="code">${this.renderCodeLines()}</div>
             </div>
-            <div class="minimap" .innerHTML=${this.minimapHtml}></div>
+            <div class="minimap">${this.renderMinimapMarkers(this.minimapMarkers)}</div>
           </div>
         </div>
       </div>
@@ -798,5 +786,43 @@ export class TimewarpApp extends LitElement {
         ${this.boundaryText}
       </div>
     `;
+  }
+
+  private renderCodeLines(): TemplateResult[] {
+    const result: TemplateResult[] = [];
+    for (let i = 0; i < this.mainLines.length; i++) {
+      const deletedLines = this.mainDeletions.get(i);
+      if (deletedLines) {
+        for (const line of deletedLines) {
+          result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
+        }
+      }
+      const { html: lineHtml, diffChanged, blameText } = this.mainLines[i];
+      result.push(html`<span class="line ${diffChanged ? "diff-changed" : ""}"><span class="line-content">${unsafeHTML(lineHtml)}</span>${blameText ? html`<span class="blame-annotation">${blameText}</span>` : nothing}</span>`);
+    }
+    // Trailing deletions
+    const trailingDeletions = this.mainDeletions.get(this.mainLines.length);
+    if (trailingDeletions) {
+      for (const line of trailingDeletions) {
+        result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
+      }
+    }
+    return result;
+  }
+
+  private renderSplitLines(): TemplateResult[] {
+    return this.splitLines.map(
+      ({ html: lineHtml, diffRemoved }) =>
+        html`<span class="line ${diffRemoved ? "diff-removed" : ""}">${unsafeHTML(lineHtml)}</span>`,
+    );
+  }
+
+  private renderMinimapMarkers(markers: MinimapMarker[]): TemplateResult[] {
+    return markers.map((m) =>
+      html`<div
+        class=${m.type === "modified" ? "minimap-marker" : "minimap-marker-removed"}
+        style="top:${m.topPct}%;height:${m.heightPct ? `${m.heightPct}%` : "3px"}"
+      ></div>`,
+    );
   }
 }
