@@ -3,11 +3,14 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"target": "ESNext",
+		"experimentalDecorators": true,
+		"useDefineForClassFields": false,
 		"types": [
 			"node"
 		],
 		"lib": [
-			"ESNext"
+			"ESNext",
+			"DOM"
 		],
 		"outDir": "dist",
 		"rootDir": "src",
