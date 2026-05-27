@@ -1,87 +1,159 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" fill="none">
-  <!-- Background -->
-  <rect width="720" height="380" rx="12" fill="#1e1e1e"/>
-  
-  <!-- Title -->
-  <text x="360" y="32" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#cccccc">Architecture</text>
-  
-  <!-- Webview Panel box -->
-  <rect x="380" y="60" width="300" height="120" rx="8" fill="#252526" stroke="#569cd6" stroke-width="1.5"/>
-  <text x="530" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#569cd6">Webview (Browser)</text>
-  <rect x="400" y="94" width="260" height="22" rx="4" fill="#1a1a1a"/>
-  <text x="530" y="109" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#4ec9b0">&lt;timewarp-app&gt;</text>
-  <text x="530" y="126" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Lit Element · Shadow DOM</text>
-  <text x="530" y="142" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Declarative rendering</text>
-  <text x="530" y="158" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Keyboard &amp; scroll handlers</text>
-  
-  <!-- Extension Host box -->
-  <rect x="40" y="60" width="280" height="120" rx="8" fill="#252526" stroke="#c586c0" stroke-width="1.5"/>
-  <text x="180" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#c586c0">Extension Host (Node)</text>
-  <rect x="60" y="94" width="120" height="22" rx="4" fill="#1a1a1a"/>
-  <text x="120" y="109" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#dcdcaa">TimewarpPanel</text>
-  <rect x="190" y="94" width="110" height="22" rx="4" fill="#1a1a1a"/>
-  <text x="245" y="109" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#dcdcaa">Highlighter</text>
-  <rect x="60" y="126" width="120" height="22" rx="4" fill="#1a1a1a"/>
-  <text x="120" y="141" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#dcdcaa">HistoryProvider</text>
-  <rect x="190" y="126" width="110" height="22" rx="4" fill="#1a1a1a"/>
-  <text x="245" y="141" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#dcdcaa">LRU Cache</text>
-  <rect x="60" y="158" width="240" height="16" rx="3" fill="#1a1a1a"/>
-  <text x="180" y="170" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="9" fill="#888">Shiki tokens · Diff computation · Blame</text>
-  
-  <!-- Arrow: Extension → Webview (typed messages) -->
-  <path d="M320 105 L380 105" stroke="#9cdcfe" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
-  <path d="M380 135 L320 135" stroke="#9cdcfe" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
-  <text x="350" y="98" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="8" fill="#9cdcfe">content</text>
-  <text x="350" y="150" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="8" fill="#9cdcfe">navigate</text>
-  
-  <!-- Git CLI box -->
-  <rect x="40" y="240" width="180" height="80" rx="8" fill="#252526" stroke="#e06c75" stroke-width="1.5"/>
-  <text x="130" y="262" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#e06c75">Git CLI</text>
-  <text x="130" y="282" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git log --follow</text>
-  <text x="130" y="298" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git show &lt;sha&gt;:&lt;file&gt;</text>
-  <text x="130" y="314" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git blame</text>
-  
-  <!-- VS Code Local History box -->
-  <rect x="270" y="240" width="180" height="80" rx="8" fill="#252526" stroke="#98c379" stroke-width="1.5"/>
-  <text x="360" y="262" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#98c379">Local History</text>
-  <text x="360" y="282" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">VS Code Timeline API</text>
-  <text x="360" y="298" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Sub-commit granularity</text>
-  <text x="360" y="314" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">workspace.fs</text>
-  
-  <!-- Unified Timeline box -->
-  <rect x="500" y="240" width="180" height="80" rx="8" fill="#252526" stroke="#e2c07b" stroke-width="1.5"/>
-  <text x="590" y="262" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#e2c07b">Unified Timeline</text>
-  <text x="590" y="282" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Merge &amp; sort by date</text>
-  <text x="590" y="298" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Bidirectional traversal</text>
-  <text x="590" y="314" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#888">Per-file indexing</text>
-  
-  <!-- Arrows from Extension Host down -->
-  <path d="M130 180 L130 240" stroke="#e06c75" stroke-width="1.5" marker-end="url(#arrowRed)"/>
-  <path d="M230 180 L360 240" stroke="#98c379" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
-  
-  <!-- Arrows from sources to timeline -->
-  <path d="M220 280 L500 280" stroke="#e2c07b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrowYellow)"/>
-  <path d="M450 280 L500 280" stroke="#e2c07b" stroke-width="1" stroke-dasharray="4,3"/>
-  
-  <!-- Arrow from timeline back up -->
-  <path d="M590 240 L590 180 L320 180" stroke="#e2c07b" stroke-width="1.5" marker-end="url(#arrowYellow)"/>
-  
-  <!-- Flow label -->
-  <text x="360" y="360" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#555">Typed message protocol · HighlightToken[] · No raw HTML</text>
-  
-  <!-- Arrow markers -->
-  <defs>
-    <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#9cdcfe" stroke-width="1"/>
-    </marker>
-    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#e06c75" stroke-width="1"/>
-    </marker>
-    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#98c379" stroke-width="1"/>
-    </marker>
-    <marker id="arrowYellow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#e2c07b" stroke-width="1"/>
-    </marker>
-  </defs>
+	<!-- Background -->
+	<rect width="720" height="380" rx="12" fill="#1e1e1e" />
+
+	<!-- Title -->
+	<text x="360" y="32" text-anchor="middle" font-family="system-ui, sans-serif"
+		font-size="14" font-weight="bold" fill="#cccccc">Architecture</text>
+
+	<!-- Webview Panel box -->
+	<rect x="380" y="60" width="300" height="120" rx="8" fill="#252526"
+		stroke="#569cd6" stroke-width="1.5" />
+	<text x="530" y="82" text-anchor="middle" font-family="system-ui, sans-serif"
+		font-size="12" font-weight="bold" fill="#569cd6">Webview (Browser)</text>
+	<rect x="400" y="94" width="260" height="22" rx="4" fill="#1a1a1a" />
+	<text x="530" y="109" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10"
+		fill="#4ec9b0">&lt;timewarp-app&gt;</text>
+	<text x="530" y="126" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Lit Element
+		· Shadow DOM</text>
+	<text x="530" y="142" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Declarative
+		rendering</text>
+	<text x="530" y="158" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Keyboard
+		&amp; scroll handlers</text>
+
+	<!-- Extension Host box -->
+	<rect x="40" y="60" width="280" height="120" rx="8" fill="#252526"
+		stroke="#c586c0" stroke-width="1.5" />
+	<text x="180" y="82" text-anchor="middle" font-family="system-ui, sans-serif"
+		font-size="12" font-weight="bold" fill="#c586c0">Extension Host
+		(Node)</text>
+	<rect x="60" y="94" width="120" height="22" rx="4" fill="#1a1a1a" />
+	<text x="120" y="109" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10"
+		fill="#dcdcaa">TimewarpPanel</text>
+	<rect x="190" y="94" width="110" height="22" rx="4" fill="#1a1a1a" />
+	<text x="245" y="109" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10"
+		fill="#dcdcaa">Highlighter</text>
+	<rect x="60" y="126" width="120" height="22" rx="4" fill="#1a1a1a" />
+	<text x="120" y="141" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10"
+		fill="#dcdcaa">HistoryProvider</text>
+	<rect x="190" y="126" width="110" height="22" rx="4" fill="#1a1a1a" />
+	<text x="245" y="141" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10" fill="#dcdcaa">LRU
+		Cache</text>
+	<rect x="60" y="158" width="240" height="16" rx="3" fill="#1a1a1a" />
+	<text x="180" y="170" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="9" fill="#888">Shiki
+		tokens · Diff computation · Blame</text>
+
+	<!-- Arrow: Extension → Webview (typed messages) -->
+	<path d="M320 105 L380 105" stroke="#9cdcfe" stroke-width="1.5"
+		marker-end="url(#arrowBlue)" />
+	<path d="M380 135 L320 135" stroke="#9cdcfe" stroke-width="1.5"
+		marker-end="url(#arrowBlue)" />
+	<text x="350" y="98" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="8"
+		fill="#9cdcfe">content</text>
+	<text x="350" y="150" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="8"
+		fill="#9cdcfe">navigate</text>
+
+	<!-- Git CLI box -->
+	<rect x="40" y="240" width="180" height="80" rx="8" fill="#252526"
+		stroke="#e06c75" stroke-width="1.5" />
+	<text x="130" y="262" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="12" font-weight="bold"
+		fill="#e06c75">Git CLI</text>
+	<text x="130" y="282" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git log
+		--follow</text>
+	<text x="130" y="298" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git
+		show &lt;sha&gt;:&lt;file&gt;</text>
+	<text x="130" y="314" text-anchor="middle"
+		font-family="SF Mono, Menlo, monospace" font-size="10" fill="#888">git
+		blame</text>
+
+	<!-- VS Code Local History box -->
+	<rect x="270" y="240" width="180" height="80" rx="8" fill="#252526"
+		stroke="#98c379" stroke-width="1.5" />
+	<text x="360" y="262" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="12" font-weight="bold"
+		fill="#98c379">Local History</text>
+	<text x="360" y="282" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">VS Code
+		Timeline API</text>
+	<text x="360" y="298" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Sub-commit
+		granularity</text>
+	<text x="360" y="314" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10"
+		fill="#888">workspace.fs</text>
+
+	<!-- Unified Timeline box -->
+	<rect x="500" y="240" width="180" height="80" rx="8" fill="#252526"
+		stroke="#e2c07b" stroke-width="1.5" />
+	<text x="590" y="262" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="12" font-weight="bold"
+		fill="#e2c07b">Unified Timeline</text>
+	<text x="590" y="282" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Merge &amp;
+		sort by date</text>
+	<text x="590" y="298" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10"
+		fill="#888">Bidirectional traversal</text>
+	<text x="590" y="314" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#888">Per-file
+		indexing</text>
+
+	<!-- Arrows from Extension Host down -->
+	<path d="M130 180 L130 240" stroke="#e06c75" stroke-width="1.5"
+		marker-end="url(#arrowRed)" />
+	<path d="M230 180 L360 240" stroke="#98c379" stroke-width="1.5"
+		marker-end="url(#arrowGreen)" />
+
+	<!-- Arrows from sources to timeline -->
+	<path d="M220 280 L500 280" stroke="#e2c07b" stroke-width="1"
+		stroke-dasharray="4,3" marker-end="url(#arrowYellow)" />
+	<path d="M450 280 L500 280" stroke="#e2c07b" stroke-width="1"
+		stroke-dasharray="4,3" />
+
+	<!-- Arrow from timeline back up -->
+	<path d="M590 240 L590 180 L320 180" stroke="#e2c07b" stroke-width="1.5"
+		marker-end="url(#arrowYellow)" />
+
+	<!-- Flow label -->
+	<text x="360" y="360" text-anchor="middle"
+		font-family="system-ui, sans-serif" font-size="10" fill="#555">Typed
+		message protocol · HighlightToken[] · No raw HTML</text>
+
+	<!-- Arrow markers -->
+	<defs>
+		<marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3"
+			orient="auto">
+			<path d="M0,0 L8,3 L0,6" fill="none" stroke="#9cdcfe"
+				stroke-width="1" />
+		</marker>
+		<marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3"
+			orient="auto">
+			<path d="M0,0 L8,3 L0,6" fill="none" stroke="#e06c75"
+				stroke-width="1" />
+		</marker>
+		<marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3"
+			orient="auto">
+			<path d="M0,0 L8,3 L0,6" fill="none" stroke="#98c379"
+				stroke-width="1" />
+		</marker>
+		<marker id="arrowYellow" markerWidth="8" markerHeight="6" refX="8"
+			refY="3" orient="auto">
+			<path d="M0,0 L8,3 L0,6" fill="none" stroke="#e2c07b"
+				stroke-width="1" />
+		</marker>
+	</defs>
 </svg>

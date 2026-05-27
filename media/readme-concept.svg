@@ -1,105 +1,162 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" fill="none">
-  <!-- Background -->
-  <rect width="720" height="420" rx="12" fill="#1e1e1e"/>
-  
-  <!-- Title bar -->
-  <rect x="0" y="0" width="720" height="36" rx="12" fill="#323233"/>
-  <rect x="0" y="12" width="720" height="24" fill="#323233"/>
-  <circle cx="20" cy="18" r="6" fill="#ff5f57"/>
-  <circle cx="40" cy="18" r="6" fill="#febc2e"/>
-  <circle cx="60" cy="18" r="6" fill="#28c840"/>
-  <text x="360" y="22" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#cccccc">server.ts — Git Timewarp</text>
-  
-  <!-- Status bar top -->
-  <rect x="16" y="48" width="688" height="52" rx="6" fill="#252526"/>
-  <text x="32" y="68" font-family="SF Mono, Menlo, monospace" font-size="11" fill="#888">⏪ Alt+,</text>
-  <text x="600" y="68" font-family="SF Mono, Menlo, monospace" font-size="11" fill="#888">Alt+. ⏩</text>
-  
-  <!-- Time indicator -->
-  <text x="360" y="68" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" fill="#569cd6">5 back · 3 days ago</text>
-  <text x="360" y="88" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#9cdcfe">feat: add caching layer — @alice</text>
-  
-  <!-- Code area -->
-  <rect x="16" y="108" width="648" height="260" rx="4" fill="#1a1a1a"/>
-  
-  <!-- Line numbers -->
-  <text x="32" y="136" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">12</text>
-  <text x="32" y="160" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">13</text>
-  <text x="32" y="184" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">14</text>
-  <text x="32" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">15</text>
-  <text x="32" y="232" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">16</text>
-  <text x="32" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">17</text>
-  <text x="32" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">18</text>
-  <text x="32" y="304" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">19</text>
-  <text x="32" y="328" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">20</text>
-  <text x="32" y="352" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#555">21</text>
-  
-  <!-- Code lines -->
-  <text x="64" y="136" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#c586c0">import</text>
-  <text x="112" y="136" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">{ LRUCache }</text>
-  <text x="232" y="136" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#c586c0">from</text>
-  <text x="272" y="136" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#ce9178">'./cache'</text>
-  <text x="64" y="160" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#444"> </text>
-  <text x="64" y="184" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6">export class</text>
-  <text x="168" y="184" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#4ec9b0"> HistoryProvider</text>
-  <text x="296" y="184" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> {</text>
-  
-  <!-- Changed line highlight -->
-  <rect x="56" y="195" width="600" height="20" rx="2" fill="#4b3d1f" opacity="0.6"/>
-  <text x="80" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6">  private</text>
-  <text x="160" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#9cdcfe"> cache</text>
-  <text x="208" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> =</text>
-  <text x="224" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6"> new</text>
-  <text x="260" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#4ec9b0"> LRUCache</text>
-  <text x="336" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">(</text>
-  <text x="344" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#b5cea8">50</text>
-  <text x="360" y="208" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">);</text>
-  
-  <text x="80" y="232" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> </text>
-  <text x="80" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6">  async</text>
-  <text x="128" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#dcdcaa"> getHistory</text>
-  <text x="216" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">(file:</text>
-  <text x="268" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#4ec9b0"> string</text>
-  <text x="316" y="256" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">) {</text>
-  <text x="96" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6">    const</text>
-  <text x="152" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#9cdcfe"> cached</text>
-  <text x="200" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> =</text>
-  <text x="216" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#569cd6"> this</text>
-  <text x="248" y="280" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">.cache.get(file);</text>
-  <text x="96" y="304" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#c586c0">    if</text>
-  <text x="128" y="304" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> (cached)</text>
-  <text x="200" y="304" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#c586c0"> return</text>
-  <text x="256" y="304" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc"> cached;</text>
-  <text x="96" y="328" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#6a9955">    // spawn git log...</text>
-  <text x="80" y="352" font-family="SF Mono, Menlo, monospace" font-size="12" fill="#cccccc">  }</text>
-  
-  <!-- Change indicator on gutter -->
-  <rect x="56" y="195" width="3" height="20" rx="1" fill="#e2c07b"/>
-  
-  <!-- Minimap -->
-  <rect x="672" y="108" width="32" height="260" rx="4" fill="#252526"/>
-  <rect x="678" y="148" width="4" height="12" rx="1" fill="#e2c07b" opacity="0.7"/>
-  <rect x="678" y="200" width="4" height="6" rx="1" fill="#e06c75" opacity="0.7"/>
-  <rect x="678" y="270" width="4" height="18" rx="1" fill="#e2c07b" opacity="0.7"/>
-  
-  <!-- Timeline bar -->
-  <rect x="16" y="380" width="688" height="28" rx="14" fill="#252526"/>
-  <rect x="20" y="384" width="100" height="20" rx="10" fill="#569cd6" opacity="0.3"/>
-  <circle cx="120" cy="394" r="6" fill="#569cd6"/>
-  
-  <!-- Timeline dots -->
-  <circle cx="40" cy="394" r="2.5" fill="#555"/>
-  <circle cx="65" cy="394" r="2.5" fill="#555"/>
-  <circle cx="90" cy="394" r="2.5" fill="#555"/>
-  <circle cx="120" cy="394" r="3.5" fill="#569cd6"/>
-  <circle cx="180" cy="394" r="2.5" fill="#555"/>
-  <circle cx="240" cy="394" r="2.5" fill="#555"/>
-  <circle cx="350" cy="394" r="2.5" fill="#555"/>
-  <circle cx="450" cy="394" r="2.5" fill="#555"/>
-  <circle cx="550" cy="394" r="2.5" fill="#555"/>
-  <circle cx="680" cy="394" r="2.5" fill="#98c379"/>
-  
-  <!-- Labels on timeline -->
-  <text x="40" y="408" font-family="system-ui, sans-serif" font-size="8" fill="#555" text-anchor="middle">oldest</text>
-  <text x="680" y="408" font-family="system-ui, sans-serif" font-size="8" fill="#98c379" text-anchor="middle">HEAD</text>
+	<!-- Background -->
+	<rect width="720" height="420" rx="12" fill="#1e1e1e" />
+
+	<!-- Title bar -->
+	<rect x="0" y="0" width="720" height="36" rx="12" fill="#323233" />
+	<rect x="0" y="12" width="720" height="24" fill="#323233" />
+	<circle cx="20" cy="18" r="6" fill="#ff5f57" />
+	<circle cx="40" cy="18" r="6" fill="#febc2e" />
+	<circle cx="60" cy="18" r="6" fill="#28c840" />
+	<text x="360" y="22" text-anchor="middle"
+		font-family="system-ui, -apple-system, sans-serif" font-size="12"
+		fill="#cccccc">server.ts — Git Timewarp</text>
+
+	<!-- Status bar top -->
+	<rect x="16" y="48" width="688" height="52" rx="6" fill="#252526" />
+	<text x="32" y="68" font-family="SF Mono, Menlo, monospace" font-size="11"
+		fill="#888">⏪ Alt+,</text>
+	<text x="600" y="68" font-family="SF Mono, Menlo, monospace" font-size="11"
+		fill="#888">Alt+. ⏩</text>
+
+	<!-- Time indicator -->
+	<text x="360" y="68" text-anchor="middle" font-family="system-ui, sans-serif"
+		font-size="13" font-weight="bold" fill="#569cd6">5 back · 3 days
+		ago</text>
+	<text x="360" y="88" text-anchor="middle" font-family="system-ui, sans-serif"
+		font-size="11" fill="#9cdcfe">feat: add caching layer — @alice</text>
+
+	<!-- Code area -->
+	<rect x="16" y="108" width="648" height="260" rx="4" fill="#1a1a1a" />
+
+	<!-- Line numbers -->
+	<text x="32" y="136" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">12</text>
+	<text x="32" y="160" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">13</text>
+	<text x="32" y="184" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">14</text>
+	<text x="32" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">15</text>
+	<text x="32" y="232" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">16</text>
+	<text x="32" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">17</text>
+	<text x="32" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">18</text>
+	<text x="32" y="304" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">19</text>
+	<text x="32" y="328" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">20</text>
+	<text x="32" y="352" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#555">21</text>
+
+	<!-- Code lines -->
+	<text x="64" y="136" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#c586c0">import</text>
+	<text x="112" y="136" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">{ LRUCache }</text>
+	<text x="232" y="136" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#c586c0">from</text>
+	<text x="272" y="136" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#ce9178">'./cache'</text>
+	<text x="64" y="160" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#444"> </text>
+	<text x="64" y="184" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6">export class</text>
+	<text x="168" y="184" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#4ec9b0"> HistoryProvider</text>
+	<text x="296" y="184" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> {</text>
+
+	<!-- Changed line highlight -->
+	<rect x="56" y="195" width="600" height="20" rx="2" fill="#4b3d1f"
+		opacity="0.6" />
+	<text x="80" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6"> private</text>
+	<text x="160" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#9cdcfe"> cache</text>
+	<text x="208" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> =</text>
+	<text x="224" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6"> new</text>
+	<text x="260" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#4ec9b0"> LRUCache</text>
+	<text x="336" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">(</text>
+	<text x="344" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#b5cea8">50</text>
+	<text x="360" y="208" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">);</text>
+
+	<text x="80" y="232" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> </text>
+	<text x="80" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6"> async</text>
+	<text x="128" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#dcdcaa"> getHistory</text>
+	<text x="216" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">(file:</text>
+	<text x="268" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#4ec9b0"> string</text>
+	<text x="316" y="256" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">) {</text>
+	<text x="96" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6"> const</text>
+	<text x="152" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#9cdcfe"> cached</text>
+	<text x="200" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> =</text>
+	<text x="216" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#569cd6"> this</text>
+	<text x="248" y="280" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc">.cache.get(file);</text>
+	<text x="96" y="304" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#c586c0"> if</text>
+	<text x="128" y="304" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> (cached)</text>
+	<text x="200" y="304" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#c586c0"> return</text>
+	<text x="256" y="304" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> cached;</text>
+	<text x="96" y="328" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#6a9955"> // spawn git log...</text>
+	<text x="80" y="352" font-family="SF Mono, Menlo, monospace" font-size="12"
+		fill="#cccccc"> }</text>
+
+	<!-- Change indicator on gutter -->
+	<rect x="56" y="195" width="3" height="20" rx="1" fill="#e2c07b" />
+
+	<!-- Minimap -->
+	<rect x="672" y="108" width="32" height="260" rx="4" fill="#252526" />
+	<rect x="678" y="148" width="4" height="12" rx="1" fill="#e2c07b"
+		opacity="0.7" />
+	<rect x="678" y="200" width="4" height="6" rx="1" fill="#e06c75"
+		opacity="0.7" />
+	<rect x="678" y="270" width="4" height="18" rx="1" fill="#e2c07b"
+		opacity="0.7" />
+
+	<!-- Timeline bar -->
+	<rect x="16" y="380" width="688" height="28" rx="14" fill="#252526" />
+	<rect x="20" y="384" width="100" height="20" rx="10" fill="#569cd6"
+		opacity="0.3" />
+	<circle cx="120" cy="394" r="6" fill="#569cd6" />
+
+	<!-- Timeline dots -->
+	<circle cx="40" cy="394" r="2.5" fill="#555" />
+	<circle cx="65" cy="394" r="2.5" fill="#555" />
+	<circle cx="90" cy="394" r="2.5" fill="#555" />
+	<circle cx="120" cy="394" r="3.5" fill="#569cd6" />
+	<circle cx="180" cy="394" r="2.5" fill="#555" />
+	<circle cx="240" cy="394" r="2.5" fill="#555" />
+	<circle cx="350" cy="394" r="2.5" fill="#555" />
+	<circle cx="450" cy="394" r="2.5" fill="#555" />
+	<circle cx="550" cy="394" r="2.5" fill="#555" />
+	<circle cx="680" cy="394" r="2.5" fill="#98c379" />
+
+	<!-- Labels on timeline -->
+	<text x="40" y="408" font-family="system-ui, sans-serif" font-size="8"
+		fill="#555" text-anchor="middle">oldest</text>
+	<text x="680" y="408" font-family="system-ui, sans-serif" font-size="8"
+		fill="#98c379" text-anchor="middle">HEAD</text>
 </svg>
