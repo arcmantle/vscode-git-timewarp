@@ -14,32 +14,9 @@ Git Timewarp lets you scroll backward and forward through a file's commit histor
 
 Traditional git history tools pull you *away* from code — into diff viewers, blame panels, or log outputs. Git Timewarp keeps you *in* the editor and adds a temporal axis:
 
-```
-                         Alt+,                    Alt+.
-                    ◀── Step Back ──         ── Step Forward ──▶
-
-┌──────────────────────────────────────────────────────────────────┐
-│                                                                  │
-│   5 back · 3 days ago                                            │
-│   feat: add caching layer — @alice                               │
-│                                                                  │
-│   ┌──────────────────────────────────────────────────────────┐   │
-│   │  import { LRUCache } from './cache';                     │   │
-│   │                                                          │   │
-│   │  export class HistoryProvider {                           │   │
-│   │    private cache = new LRUCache(50);  ← changed line     │   │
-│   │                                                          │   │
-│   │    async getHistory(file: string) {                       │   │
-│   │      ...                                                 │   │
-│   │    }                                                     │   │
-│   │  }                                                       │   │
-│   └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│   ┃████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░┃      │
-│   ▲ timeline position                                            │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+<img src="media/readme-concept.svg" alt="Git Timewarp concept — navigating through file history in-place" width="680">
+</p>
 
 Your scroll position is preserved across version changes — you stay anchored to the same region of code as you move through time.
 
@@ -59,17 +36,9 @@ Changed lines are highlighted inline. Deleted lines appear as collapsed indicato
 
 Compare two points in time side-by-side within the same webview:
 
-```
-┌─────────────────────────────┬─────────────────────────────────┐
-│   5 back · feat: caching    │   Present                       │
-│                             │                                 │
-│   const cache = {};         │   const cache = new LRUCache(); │
-│   cache[key] = val;    ←──  │   cache.set(key, val);     ←──  │
-│                             │                                 │
-└─────────────────────────────┴─────────────────────────────────┘
-         Alt+S = split vs Present
-         Alt+D = split vs Previous commit
-```
+<p align="center">
+<img src="media/readme-split.svg" alt="Split view comparing historical and present versions" width="680">
+</p>
 
 ### Minimap Markers
 
@@ -101,29 +70,9 @@ When you reach the beginning of history or return to the present, a brief overla
 
 ## How It Works
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                       VS Code Editor                       │
-│                                                           │
-│  ┌─────────────┐    Alt+,/Alt+.    ┌──────────────────┐  │
-│  │  Extension  │ ◀──────────────── │  Webview Panel   │  │
-│  │   Host      │ ──────────────▶   │  (Lit Element)   │  │
-│  └──────┬──────┘  typed messages   └──────────────────┘  │
-│         │                                                 │
-│         │ spawn                                           │
-│         ▼                                                 │
-│  ┌─────────────┐                                          │
-│  │   git CLI   │                                          │
-│  │  log/show   │                                          │
-│  └──────┬──────┘                                          │
-│         │                                                 │
-│         ▼                                                 │
-│  ┌─────────────┐     ┌──────────────┐                    │
-│  │  LRU Cache  │     │ VS Code Local│                    │
-│  │  (in-mem)   │     │   History    │                    │
-│  └─────────────┘     └──────────────┘                    │
-└───────────────────────────────────────────────────────────┘
-```
+<p align="center">
+<img src="media/readme-architecture.svg" alt="Architecture diagram showing extension host, webview, git CLI, and timeline" width="680">
+</p>
 
 1. **History Provider** — spawns `git log --follow` to build a timeline of commits per file
 2. **Content Provider** — retrieves file content at any commit via `git show`
