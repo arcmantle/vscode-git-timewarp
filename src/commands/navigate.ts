@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { getConfig } from "../config.js";
+import { applyDiffDecorations, clearDiffDecorations } from "../editor/diff-decorations.js";
 import { getFileHistory } from "../git/history-provider.js";
 import { getLocalHistory } from "../history/local-history-provider.js";
 import { Timeline } from "../history/timeline.js";
@@ -24,7 +25,7 @@ async function getTimeline(filePath: string, uri: vscode.Uri): Promise<Timeline>
 
   const config = getConfig();
   const [commits, localHistory] = await Promise.all([
-    getFileHistory(filePath, { follow: config.followRenames, maxCount: config.maxCommits }),
+    getFileHistory(filePath, { maxCount: config.maxCommits }),
     config.includeLocalHistory ? getLocalHistory(uri) : Promise.resolve([]),
   ]);
 
@@ -137,14 +138,32 @@ export async function returnToPresent(statusBar: vscode.StatusBarItem): Promise<
 
   // Save scroll position
   const cursorLine = editor.selection.active.line;
+  const cursorChar = editor.selection.active.character;
 
   // Open the original file
   const fileUri = vscode.Uri.file(filePath);
   const doc = await vscode.workspace.openTextDocument(fileUri);
-  const newEditor = await vscode.window.showTextDocument(doc, editor.viewColumn);
 
-  // Restore scroll position
-  restoreScrollPosition(newEditor, cursorLine);
+  // Calculate target position before opening
+  const maxLine = doc.lineCount - 1;
+  const targetLine = Math.min(cursorLine, maxLine);
+  const targetChar = Math.min(cursorChar, doc.lineAt(targetLine).text.length);
+  const targetPosition = new vscode.Position(targetLine, targetChar);
+  const targetSelection = new vscode.Selection(targetPosition, targetPosition);
+
+  // Show document with selection pre-set
+  const newEditor = await vscode.window.showTextDocument(doc, {
+    viewColumn: editor.viewColumn,
+    selection: targetSelection,
+  });
+
+  newEditor.revealRange(
+    new vscode.Range(targetPosition, targetPosition),
+    vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+  );
+
+  // Clear diff decorations and caches
+  clearDiffDecorations(newEditor);
 
   // Update context and status bar
   await vscode.commands.executeCommand("setContext", "gitTimewarp.isTimeWarping", false);
@@ -161,18 +180,42 @@ async function showHistoricalVersion(
 
   // Save scroll position before switching
   const cursorLine = editor.selection.active.line;
+  const cursorChar = editor.selection.active.character;
 
-  // Open the historical version
+  // Pre-load the document content before showing it
   const uri = encodeTimewarpUri(entry.filePath, entry.commitHash, entry.label);
   const doc = await vscode.workspace.openTextDocument(uri);
+
+  // Calculate target position before opening
+  const maxLine = doc.lineCount - 1;
+  const targetLine = Math.min(cursorLine, maxLine);
+  const targetChar = Math.min(cursorChar, doc.lineAt(targetLine).text.length);
+  const targetPosition = new vscode.Position(targetLine, targetChar);
+  const targetSelection = new vscode.Selection(targetPosition, targetPosition);
+
+  // Show document with selection pre-set to avoid jump
   const newEditor = await vscode.window.showTextDocument(doc, {
     viewColumn: editor.viewColumn,
     preview: true,
     preserveFocus: false,
+    selection: targetSelection,
   });
 
-  // Restore scroll position
-  restoreScrollPosition(newEditor, cursorLine);
+  // Ensure the target line is centered in view
+  newEditor.revealRange(
+    new vscode.Range(targetPosition, targetPosition),
+    vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+  );
+
+  // Apply diff decorations: compare this version to the previous (older) commit
+  const olderEntry = timeline.getOlderEntry();
+  if (olderEntry?.commitHash) {
+    const { getFileAtCommit } = await import("../git/content-provider.js");
+    const olderContent = await getFileAtCommit(entry.filePath, olderEntry.commitHash);
+    if (olderContent !== null) {
+      applyDiffDecorations(newEditor, doc.getText(), olderContent);
+    }
+  }
 
   // Set context for keybinding conditions
   await vscode.commands.executeCommand("setContext", "gitTimewarp.isTimeWarping", true);
@@ -183,17 +226,6 @@ async function showHistoricalVersion(
   statusBar.text = `$(history) ${timeline.stepsFromPresent} back · ${ago}${author}`;
   statusBar.tooltip = entry.label;
   statusBar.show();
-}
-
-function restoreScrollPosition(editor: vscode.TextEditor, targetLine: number): void {
-  const maxLine = editor.document.lineCount - 1;
-  const line = Math.min(targetLine, maxLine);
-  const position = new vscode.Position(line, 0);
-  editor.selection = new vscode.Selection(position, position);
-  editor.revealRange(
-    new vscode.Range(position, position),
-    vscode.TextEditorRevealType.InCenter,
-  );
 }
 
 function formatRelativeTime(timestamp: number): string {

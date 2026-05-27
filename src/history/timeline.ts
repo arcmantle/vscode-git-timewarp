@@ -77,6 +77,15 @@ export class Timeline {
   jumpToPresent(): void {
     this.cursor = -1;
   }
+
+  /** Get the entry one step older than the current position (for diff comparison). */
+  getOlderEntry(): TimelineEntry | null {
+    const olderIdx = this.cursor + 1;
+    if (olderIdx >= this.entries.length) {
+      return null;
+    }
+    return this.entries[olderIdx];
+  }
 }
 
 function deduplicateByTimestamp(entries: TimelineEntry[], windowMs: number): TimelineEntry[] {

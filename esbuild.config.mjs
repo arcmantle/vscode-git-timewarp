@@ -6,13 +6,16 @@ const watch = process.argv.includes("--watch");
 const buildOptions = {
   entryPoints: ["src/extension.ts"],
   bundle: true,
-  outfile: "dist/extension.js",
+  outfile: "dist/extension.mjs",
   external: ["vscode"],
-  format: "cjs",
+  format: "esm",
   platform: "node",
   target: "node20",
   sourcemap: true,
   minify: false,
+  banner: {
+    js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+  },
 };
 
 if (watch) {
