@@ -3,7 +3,7 @@
 	"displayName": "Git Timewarp",
 	"description": "Navigate through a file's history in-place with keyboard shortcuts — treating time as a navigable dimension in the editor.",
 	"version": "0.1.0",
-	"publisher": "eyeshare",
+	"publisher": "arcmantle",
 	"license": "MIT",
 	"type": "module",
 	"engines": {
