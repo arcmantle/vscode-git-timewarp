@@ -6,6 +6,7 @@ import { Timeline } from "../history/timeline.js";
 import { getConfig } from "../config.js";
 import { highlightCode } from "./highlighter.js";
 import type { TimelineEntry } from "../history/types.js";
+import type { ToWebviewMessage, FromWebviewMessage } from "./messages.js";
 
 export class TimewarpWebviewPanel {
   private panel: vscode.WebviewPanel | null = null;
@@ -77,7 +78,7 @@ export class TimewarpWebviewPanel {
     // Send initial content (highlighted)
     const lang = this.getLanguageId();
     const highlightedLines = await highlightCode(this.currentContent, lang);
-    await this.panel.webview.postMessage({
+    await this.postToWebview({
       type: "init",
       highlightedLines,
       language: lang,
@@ -87,7 +88,11 @@ export class TimewarpWebviewPanel {
     });
   }
 
-  private async handleMessage(msg: { type: string; [key: string]: unknown }): Promise<void> {
+  private postToWebview(msg: ToWebviewMessage): Thenable<boolean> {
+    return this.panel!.webview.postMessage(msg);
+  }
+
+  private async handleMessage(msg: FromWebviewMessage): Promise<void> {
     switch (msg.type) {
       case "scroll-back":
         await this.navigateBack();
@@ -123,7 +128,7 @@ export class TimewarpWebviewPanel {
         highlightedLines = await highlightCode(this.currentContent, this.getLanguageId());
         this.highlightCache.set(hlCacheKey, highlightedLines);
       }
-      await this.panel.webview.postMessage({
+      await this.postToWebview({
         type: "split-content",
         highlightedLines,
       });
@@ -157,7 +162,7 @@ export class TimewarpWebviewPanel {
           }
         }
 
-        await this.panel.webview.postMessage({
+        await this.postToWebview({
           type: "split-content",
           highlightedLines,
           diffLines,
@@ -166,7 +171,7 @@ export class TimewarpWebviewPanel {
       }
     }
     // No older entry — show empty
-    await this.panel.webview.postMessage({
+    await this.postToWebview({
       type: "split-content",
       highlightedLines: [],
       diffLines: [],
@@ -182,7 +187,7 @@ export class TimewarpWebviewPanel {
       entry = this.timeline.back();
     }
     if (!entry) {
-      await this.panel.webview.postMessage({ type: "boundary", direction: "oldest" });
+      await this.postToWebview({ type: "boundary", direction: "oldest" });
       return;
     }
 
@@ -202,11 +207,10 @@ export class TimewarpWebviewPanel {
       // Back at present
       this.visibleStepsBack = 0;
       const highlightedLines = await highlightCode(this.currentContent, this.getLanguageId());
-      await this.panel.webview.postMessage({
+      await this.postToWebview({
         type: "content",
         highlightedLines,
         stepsBack: 0,
-        info: "Present",
         diffLines: [],
       });
       return;
@@ -221,7 +225,7 @@ export class TimewarpWebviewPanel {
 
     const content = await getFileAtCommit(this.filePath, entry.commitHash);
     if (content === null) {
-      await this.panel.webview.postMessage({ type: "boundary", direction: "oldest" });
+      await this.postToWebview({ type: "boundary", direction: "oldest" });
       return;
     }
 
@@ -254,7 +258,7 @@ export class TimewarpWebviewPanel {
       this.highlightCache.set(hlCacheKey, highlightedLines);
     }
 
-    await this.panel.webview.postMessage({
+    await this.postToWebview({
       type: "content",
       highlightedLines,
       stepsBack: this.visibleStepsBack,

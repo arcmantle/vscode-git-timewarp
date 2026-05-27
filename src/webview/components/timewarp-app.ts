@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import type { ToWebviewMessage, FromWebviewMessage, DeletedRange } from "../messages.js";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -433,12 +434,12 @@ export class TimewarpApp extends LitElement {
     document.removeEventListener("keydown", this.handleKeydown);
   }
 
-  private handleExtensionMessage = (event: MessageEvent) => {
+  private handleExtensionMessage = (event: MessageEvent<ToWebviewMessage>) => {
     const msg = event.data;
     switch (msg.type) {
       case "init":
         this.totalCommits = msg.totalCommits || 1;
-        this.renderMainCode(msg.highlightedLines, msg.diffLines || [], msg.blame || {}, msg.deletedRanges || []);
+        this.renderMainCode(msg.highlightedLines, [], {}, []);
         this.statusText = msg.fileName + " \u00b7 " + this.totalCommits + " commits";
         this.commitMessageText = "";
         this.commitAuthorText = "";
@@ -476,15 +477,15 @@ export class TimewarpApp extends LitElement {
 
   private handleKeydown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      this.vscode.postMessage({ type: "exit" });
+      this.postMessage({ type: "exit" });
     }
     if (e.altKey && e.key === ",") {
       e.preventDefault();
-      this.vscode.postMessage({ type: "scroll-back" });
+      this.postMessage({ type: "scroll-back" });
     }
     if (e.altKey && e.key === ".") {
       e.preventDefault();
-      this.vscode.postMessage({ type: "scroll-forward" });
+      this.postMessage({ type: "scroll-forward" });
     }
     if (e.altKey && e.code === "KeyS") {
       e.preventDefault();
@@ -496,6 +497,10 @@ export class TimewarpApp extends LitElement {
     }
   };
 
+  private postMessage(msg: FromWebviewMessage) {
+    this.vscode.postMessage(msg);
+  }
+
   private handleWheel = (e: WheelEvent) => {
     if (e.altKey) {
       e.preventDefault();
@@ -504,9 +509,9 @@ export class TimewarpApp extends LitElement {
       if (now - this.lastScrollTime < 60) return;
       this.lastScrollTime = now;
       if (e.deltaY > 0) {
-        this.vscode.postMessage({ type: "scroll-back" });
+        this.postMessage({ type: "scroll-back" });
       } else {
-        this.vscode.postMessage({ type: "scroll-forward" });
+        this.postMessage({ type: "scroll-forward" });
       }
     }
   };
@@ -521,10 +526,10 @@ export class TimewarpApp extends LitElement {
 
       if (mode === "present") {
         this.splitLabelText = "Present";
-        this.vscode.postMessage({ type: "request-present" });
+        this.postMessage({ type: "request-present" });
       } else {
         this.splitLabelText = "Previous commit";
-        this.vscode.postMessage({ type: "request-previous" });
+        this.postMessage({ type: "request-previous" });
       }
     }
   }
@@ -533,7 +538,7 @@ export class TimewarpApp extends LitElement {
     htmlLines: string[],
     diffLines: number[],
     blame: Record<number, string>,
-    deletedRanges: { afterLine: number; lines: string[] }[],
+    deletedRanges: DeletedRange[],
   ) {
     const diffSet = new Set(diffLines);
     this.totalLines = htmlLines.length;
@@ -590,7 +595,7 @@ export class TimewarpApp extends LitElement {
     });
   }
 
-  private computeMinimapMarkers(diffLines: number[], deletedRanges: { afterLine: number; lines: string[] }[]) {
+  private computeMinimapMarkers(diffLines: number[], deletedRanges: DeletedRange[]) {
     const markers: MinimapMarker[] = [];
     if (this.totalLines > 0) {
       if (diffLines.length) {
