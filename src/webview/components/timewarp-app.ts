@@ -470,7 +470,7 @@ export class TimewarpApp extends LitElement {
     );
   }
 
-    static styles = css`
+	static styles = css`
     :host {
       display: block;
       font-family: var(--vscode-editor-font-family, 'Fira Code', 'Cascadia Code', monospace);
