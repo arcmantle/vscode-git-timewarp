@@ -3,7 +3,7 @@
 **Navigate a file's history in-place — treating time as a navigable dimension in the editor.**
 
 <p align="center">
-<img src="media/icon-dark.svg" alt="Git Timewarp" width="128">
+<img src="media/icon.png" alt="Git Timewarp" width="128">
 </p>
 
 Git Timewarp lets you scroll backward and forward through a file's commit history without leaving the editor. No context switching to diff views, no separate panels — just seamless time travel where you work.
@@ -15,7 +15,7 @@ Git Timewarp lets you scroll backward and forward through a file's commit histor
 Traditional git history tools pull you *away* from code — into diff viewers, blame panels, or log outputs. Git Timewarp keeps you *in* the editor and adds a temporal axis:
 
 <p align="center">
-<img src="media/readme-concept.svg" alt="Git Timewarp concept — navigating through file history in-place" width="680">
+<img src="media/readme-concept.png" alt="Git Timewarp concept — navigating through file history in-place" width="680">
 </p>
 
 Your scroll position is preserved across version changes — you stay anchored to the same region of code as you move through time.
@@ -37,7 +37,7 @@ Changed lines are highlighted inline. Deleted lines appear as collapsed indicato
 Compare two points in time side-by-side within the same webview:
 
 <p align="center">
-<img src="media/readme-split.svg" alt="Split view comparing historical and present versions" width="680">
+<img src="media/readme-split.png" alt="Split view comparing historical and present versions" width="680">
 </p>
 
 ### Minimap Markers
@@ -71,7 +71,7 @@ When you reach the beginning of history or return to the present, a brief overla
 ## How It Works
 
 <p align="center">
-<img src="media/readme-architecture.svg" alt="Architecture diagram showing extension host, webview, git CLI, and timeline" width="680">
+<img src="media/readme-architecture.png" alt="Architecture diagram showing extension host, webview, git CLI, and timeline" width="680">
 </p>
 
 1. **History Provider** — spawns `git log --follow` to build a timeline of commits per file

@@ -9,6 +9,7 @@
 		"type": "git",
 		"url": "https://github.com/arcmantle/vscode-git-timewarp"
 	},
+	"icon": "media/icon.png",
 	"type": "module",
 	"engines": {
 		"vscode": "^1.85.0"
