@@ -26,7 +26,7 @@ async function getTimeline(filePath: string, uri: vscode.Uri): Promise<Timeline>
   const config = getConfig();
   const [commits, localHistory] = await Promise.all([
     getFileHistory(filePath, { maxCount: config.maxCommits }),
-    config.includeLocalHistory ? getLocalHistory(uri) : Promise.resolve([]),
+    config.includeLocalHistory ? getLocalHistory(uri, undefined) : Promise.resolve([]),
   ]);
 
   timeline.build(commits, localHistory, filePath);

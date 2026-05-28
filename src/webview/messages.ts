@@ -21,6 +21,10 @@ export interface InitMessage {
   fileName: string;
   scrollLine: number;
   totalCommits: number;
+  totalLocalEntries: number;
+  /** Restored UI preferences from previous session. */
+  timelineMode: TimelineMode;
+  splitMode: SplitMode;
 }
 
 export interface ContentMessage {
@@ -33,6 +37,8 @@ export interface ContentMessage {
   commitMessage?: string;
   deletedRanges?: DeletedRange[];
   blame?: Record<number, string>;
+  /** Sent when the timeline entry count changes (e.g. mode switch). */
+  totalEntries?: number;
 }
 
 export interface SplitContentMessage {
@@ -52,7 +58,12 @@ export type FromWebviewMessage =
   | { type: "scroll-forward" }
   | { type: "request-present" }
   | { type: "request-previous" }
+  | { type: "set-timeline-mode"; mode: TimelineMode }
+  | { type: "set-split-mode"; mode: SplitMode }
   | { type: "exit" };
+
+export type TimelineMode = "git" | "local";
+export type SplitMode = "" | "present" | "previous";
 
 export interface DeletedRange {
   afterLine: number;

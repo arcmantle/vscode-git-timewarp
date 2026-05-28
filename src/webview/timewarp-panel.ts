@@ -1,12 +1,21 @@
 import * as vscode from "vscode";
 import { getFileHistory, getBlameForLines } from "../git/history-provider.js";
 import { getFileAtCommit } from "../git/content-provider.js";
-import { getLocalHistory } from "../history/local-history-provider.js";
+import { getLocalHistory, getFileAtLocalEntry } from "../history/local-history-provider.js";
 import { Timeline } from "../history/timeline.js";
 import { getConfig } from "../config.js";
 import { highlightCode } from "./highlighter.js";
 import type { TimelineEntry } from "../history/types.js";
-import type { ToWebviewMessage, FromWebviewMessage, HighlightedLine } from "./messages.js";
+import type {
+  ToWebviewMessage,
+  FromWebviewMessage,
+  HighlightedLine,
+  TimelineMode,
+  SplitMode,
+} from "./messages.js";
+
+const PREF_TIMELINE_MODE = "gitTimewarp.timelineMode";
+const PREF_SPLIT_MODE = "gitTimewarp.splitMode";
 
 export class TimewarpWebviewPanel {
   private panel: vscode.WebviewPanel | null = null;
@@ -18,10 +27,14 @@ export class TimewarpWebviewPanel {
   private previousContent: string | null = null;
   private highlightCache = new Map<string, HighlightedLine[]>();
   private gitCommitCount = 0;
+  private localEntryCount = 0;
+  private localHistoryLoaded = false;
   private visibleStepsBack = 0;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
+    private readonly globalStorageUri: vscode.Uri,
+    private readonly memento: vscode.Memento,
     filePath: string,
   ) {
     this.filePath = filePath;
@@ -29,17 +42,28 @@ export class TimewarpWebviewPanel {
   }
 
   async open(viewColumn: vscode.ViewColumn, scrollLine?: number): Promise<void> {
-    // Build timeline
+    // Restore previous UI preferences (default to git mode, no split)
+    const savedTimelineMode = this.memento.get<TimelineMode>(PREF_TIMELINE_MODE, "git");
+    const savedSplitMode = this.memento.get<SplitMode>(PREF_SPLIT_MODE, "");
+
+    // Build timeline. Lazy-load local history only if it's the saved mode.
     const config = getConfig();
     this.timeline = new Timeline();
 
-    const [commits, localHistory] = await Promise.all([
-      getFileHistory(this.filePath, { maxCount: config.maxCommits }),
-      config.includeLocalHistory ? getLocalHistory(this.fileUri) : Promise.resolve([]),
-    ]);
-
-    this.timeline.build(commits, localHistory, this.filePath);
+    const commits = await getFileHistory(this.filePath, { maxCount: config.maxCommits });
+    this.timeline.build(commits, [], this.filePath);
     this.gitCommitCount = commits.length;
+    this.localEntryCount = 0;
+
+    if (savedTimelineMode === "local") {
+      const localHistory = config.includeLocalHistory
+        ? await getLocalHistory(this.fileUri, this.globalStorageUri)
+        : [];
+      this.timeline.addLocalHistory(localHistory);
+      this.localHistoryLoaded = true;
+      this.localEntryCount = this.timeline.localCount;
+      this.timeline.setFilterMode("local");
+    }
 
     // Read current file content
     const bytes = await vscode.workspace.fs.readFile(this.fileUri);
@@ -59,8 +83,8 @@ export class TimewarpWebviewPanel {
     );
 
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(this.extensionUri, "media", "icon-light.svg"),
-      dark: vscode.Uri.joinPath(this.extensionUri, "media", "icon-dark.svg"),
+      light: vscode.Uri.joinPath(this.extensionUri, "media", "icon-color-square.png"),
+      dark: vscode.Uri.joinPath(this.extensionUri, "media", "icon-color-square.png"),
     };
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -84,7 +108,10 @@ export class TimewarpWebviewPanel {
       language: lang,
       fileName,
       scrollLine: scrollLine ?? 0,
-      totalCommits: this.gitCommitCount,
+      totalCommits: this.timeline.length,
+      totalLocalEntries: this.localEntryCount,
+      timelineMode: savedTimelineMode,
+      splitMode: savedSplitMode,
     });
   }
 
@@ -105,6 +132,35 @@ export class TimewarpWebviewPanel {
         break;
       case "request-previous":
         await this.sendSplitContent("previous");
+        break;
+      case "set-timeline-mode":
+        if (this.timeline) {
+          // Lazy-load local history the first time Local mode is requested
+          if (msg.mode === "local" && !this.localHistoryLoaded) {
+            const config = getConfig();
+            const localHistory = config.includeLocalHistory
+              ? await getLocalHistory(this.fileUri, this.globalStorageUri)
+              : [];
+            this.timeline.addLocalHistory(localHistory);
+            this.localHistoryLoaded = true;
+            this.localEntryCount = this.timeline.localCount;
+          }
+          this.timeline.setFilterMode(msg.mode);
+          this.visibleStepsBack = 0;
+          void this.memento.update(PREF_TIMELINE_MODE, msg.mode);
+          const lang = this.getLanguageId();
+          const highlightedLines = await highlightCode(this.currentContent, lang);
+          await this.postToWebview({
+            type: "content",
+            highlightedLines,
+            stepsBack: 0,
+            diffLines: [],
+            totalEntries: this.timeline.length,
+          });
+        }
+        break;
+      case "set-split-mode":
+        void this.memento.update(PREF_SPLIT_MODE, msg.mode);
         break;
       case "exit":
         this.dispose();
@@ -143,10 +199,10 @@ export class TimewarpWebviewPanel {
 
     const olderEntry = this.timeline.getOlderEntry();
     const currentEntry = this.timeline.currentEntry;
-    if (olderEntry?.commitHash) {
-      const olderContent = await getFileAtCommit(this.filePath, olderEntry.commitHash);
+    if (olderEntry) {
+      const olderContent = await this.getEntryContent(olderEntry);
       if (olderContent !== null) {
-        const hlCacheKey = olderEntry.commitHash;
+        const hlCacheKey = olderEntry.commitHash ?? olderEntry.id;
         let highlightedLines = this.highlightCache.get(hlCacheKey);
         if (!highlightedLines) {
           highlightedLines = await highlightCode(olderContent, this.getLanguageId());
@@ -155,8 +211,8 @@ export class TimewarpWebviewPanel {
 
         // Compute removed lines: lines in older that don't exist in current
         let diffLines: number[] = [];
-        if (currentEntry?.commitHash) {
-          const currentContent = await getFileAtCommit(this.filePath, currentEntry.commitHash);
+        if (currentEntry) {
+          const currentContent = await this.getEntryContent(currentEntry);
           if (currentContent !== null) {
             diffLines = computeChangedLines(olderContent, currentContent);
           }
@@ -170,20 +226,29 @@ export class TimewarpWebviewPanel {
         return;
       }
     }
-    // No older entry — show empty
-    await this.postToWebview({
-      type: "split-content",
-      highlightedLines: [],
-      diffLines: [],
-    });
+    // No older entry — show the current entry's content (beginning of history)
+    const fallbackEntry = this.timeline.currentEntry;
+    const fallbackContent = fallbackEntry
+      ? await this.getEntryContent(fallbackEntry)
+      : this.currentContent;
+    if (fallbackContent !== null) {
+      const hlCacheKey = fallbackEntry ? (fallbackEntry.commitHash ?? fallbackEntry.id) + "_fb" : "present";
+      let highlightedLines = this.highlightCache.get(hlCacheKey);
+      if (!highlightedLines) {
+        highlightedLines = await highlightCode(fallbackContent, this.getLanguageId());
+        this.highlightCache.set(hlCacheKey, highlightedLines);
+      }
+      await this.postToWebview({ type: "split-content", highlightedLines, diffLines: [] });
+    } else {
+      await this.postToWebview({ type: "split-content", highlightedLines: [], diffLines: [] });
+    }
   }
 
   private async navigateBack(): Promise<void> {
     if (!this.timeline || !this.panel) return;
 
-    // Skip entries without commitHash (local history without git data)
     let entry = this.timeline.back();
-    while (entry && !entry.commitHash) {
+    while (entry && !entry.commitHash && !entry.localContentUri) {
       entry = this.timeline.back();
     }
     if (!entry) {
@@ -198,9 +263,8 @@ export class TimewarpWebviewPanel {
   private async navigateForward(): Promise<void> {
     if (!this.timeline || !this.panel) return;
 
-    // Skip entries without commitHash
     let entry = this.timeline.forward();
-    while (entry && !entry.commitHash) {
+    while (entry && !entry.commitHash && !entry.localContentUri) {
       entry = this.timeline.forward();
     }
     if (!entry) {
@@ -220,10 +284,20 @@ export class TimewarpWebviewPanel {
     await this.showEntry(entry);
   }
 
-  private async showEntry(entry: TimelineEntry): Promise<void> {
-    if (!entry.commitHash || !this.panel || !this.timeline) return;
+  private async getEntryContent(entry: TimelineEntry): Promise<string | null> {
+    if (entry.commitHash) {
+      return getFileAtCommit(this.filePath, entry.commitHash);
+    }
+    if (entry.localContentUri) {
+      return getFileAtLocalEntry(entry.localContentUri);
+    }
+    return null;
+  }
 
-    const content = await getFileAtCommit(this.filePath, entry.commitHash);
+  private async showEntry(entry: TimelineEntry): Promise<void> {
+    if (!this.panel || !this.timeline) return;
+
+    const content = await this.getEntryContent(entry);
     if (content === null) {
       await this.postToWebview({ type: "boundary", direction: "oldest" });
       return;
@@ -233,8 +307,8 @@ export class TimewarpWebviewPanel {
     const olderEntry = this.timeline.getOlderEntry();
     let diffLines: number[] = [];
     let deletedRanges: { afterLine: number; lines: string[] }[] = [];
-    if (olderEntry?.commitHash) {
-      const olderContent = await getFileAtCommit(this.filePath, olderEntry.commitHash);
+    if (olderEntry) {
+      const olderContent = await this.getEntryContent(olderEntry);
       if (olderContent !== null) {
         diffLines = computeChangedLines(content, olderContent);
         deletedRanges = computeDeletedPositions(content, olderContent);
@@ -244,14 +318,14 @@ export class TimewarpWebviewPanel {
     const ago = formatRelativeTime(entry.timestamp);
     const author = entry.authorName ? `@${entry.authorName}` : "";
 
-    // Get blame for changed lines (cached after first fetch)
+    // Blame only available for git entries
     let blame: Record<number, string> = {};
     if (diffLines.length > 0 && entry.commitHash) {
       blame = await getBlameForLines(this.filePath, entry.commitHash, diffLines);
     }
 
-    // Highlight the content (cached per commit)
-    const hlCacheKey = entry.commitHash || "present";
+    // Highlight the content (cached per entry id)
+    const hlCacheKey = entry.commitHash ?? entry.id;
     let highlightedLines = this.highlightCache.get(hlCacheKey);
     if (!highlightedLines) {
       highlightedLines = await highlightCode(content, this.getLanguageId());

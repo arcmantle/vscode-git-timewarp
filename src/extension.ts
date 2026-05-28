@@ -30,7 +30,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const filePath = editor.document.uri.fsPath;
       const scrollLine = editor.selection.active.line;
-      const panel = new TimewarpWebviewPanel(context.extensionUri, filePath);
+      const panel = new TimewarpWebviewPanel(
+        context.extensionUri,
+        context.globalStorageUri,
+        context.globalState,
+        filePath,
+      );
       await panel.open(editor.viewColumn ?? vscode.ViewColumn.One, scrollLine);
     }),
   );

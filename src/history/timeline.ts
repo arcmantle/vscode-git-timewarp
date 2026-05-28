@@ -1,9 +1,13 @@
 import type { Commit } from "../git/types.js";
 import type { TimelineEntry } from "./types.js";
 
+export type TimelineFilterMode = "git" | "local";
+
 export class Timeline {
+  private allEntries: TimelineEntry[] = [];
   private entries: TimelineEntry[] = [];
   private cursor = -1; // -1 means "at present"
+  private filterMode: TimelineFilterMode = "git";
 
   get length(): number {
     return this.entries.length;
@@ -28,12 +32,19 @@ export class Timeline {
     return this.cursor + 1;
   }
 
+  get gitCount(): number {
+    return this.allEntries.filter(e => e.source === "git").length;
+  }
+
+  get localCount(): number {
+    return this.allEntries.filter(e => e.source === "local-history").length;
+  }
+
   /**
    * Build the timeline from git commits and local history entries.
    * Entries are stored newest-first (index 0 = most recent).
    */
   build(commits: Commit[], localHistory: TimelineEntry[], filePath: string): void {
-    // Convert git commits to timeline entries
     const gitEntries: TimelineEntry[] = commits.map((c) => ({
       id: `git:${c.hash}`,
       timestamp: new Date(c.date).getTime(),
@@ -44,12 +55,44 @@ export class Timeline {
       filePath,
     }));
 
-    // Merge and sort by timestamp descending (newest first)
-    const all = [...gitEntries, ...localHistory];
+    const all = [...gitEntries];
     all.sort((a, b) => b.timestamp - a.timestamp);
+    this.allEntries = deduplicateByTimestamp(all, 2000);
 
-    // Deduplicate entries within a 2-second window
-    this.entries = deduplicateByTimestamp(all, 2000);
+    // Add any local history entries if provided
+    if (localHistory.length > 0) {
+      this.addLocalHistory(localHistory);
+    }
+
+    this.applyFilter();
+  }
+
+  /** Set the timeline filter mode and reset cursor to present. */
+  setFilterMode(mode: TimelineFilterMode): void {
+    this.filterMode = mode;
+    this.applyFilter();
+  }
+
+  /** Add local history entries after initial build (lazy load). */
+  addLocalHistory(localHistory: TimelineEntry[]): void {
+    const newestCommitTime = this.allEntries
+      .filter(e => e.source === "git")
+      .reduce((max, e) => Math.max(max, e.timestamp), 0);
+
+    const relevant = localHistory.filter(e => e.timestamp > newestCommitTime);
+    if (relevant.length === 0) return;
+
+    const merged = [...this.allEntries, ...relevant];
+    merged.sort((a, b) => b.timestamp - a.timestamp);
+    this.allEntries = deduplicateByTimestamp(merged, 2000);
+  }
+
+  private applyFilter(): void {
+    if (this.filterMode === "git") {
+      this.entries = this.allEntries.filter(e => e.source === "git");
+    } else {
+      this.entries = this.allEntries.filter(e => e.source === "local-history");
+    }
     this.cursor = -1;
   }
 

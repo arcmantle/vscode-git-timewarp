@@ -106,9 +106,10 @@ describe("Timeline", () => {
       }];
       tl.build(makeCommits(3), localEntries, "/test/file.ts");
 
-      expect(tl.length).toBe(4); // 3 git + 1 local
+      tl.setFilterMode("local");
+      expect(tl.length).toBe(1); // 1 local entry
       const first = tl.back();
-      // The local entry is newest, so it comes first
+      // The local entry comes first in local mode
       expect(first?.source).toBe("local-history");
       expect(first?.commitHash).toBeUndefined();
     });

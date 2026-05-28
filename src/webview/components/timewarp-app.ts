@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import type { ToWebviewMessage, FromWebviewMessage, DeletedRange, HighlightedLine } from "../messages.js";
+import type { ToWebviewMessage, FromWebviewMessage, DeletedRange, HighlightedLine, TimelineMode } from "../messages.js";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -32,6 +32,8 @@ export class TimewarpApp extends LitElement {
   private vscode: VsCodeApi = acquireVsCodeApi();
 
   @state() private totalCommits = 0;
+  @state() private totalLocalEntries = 0;
+  @state() private timelineMode: TimelineMode = "git";
   @state() private totalLines = 0;
   @state() private statusText = "Present";
   @state() private commitMessageText = "";
@@ -46,7 +48,13 @@ export class TimewarpApp extends LitElement {
   @state() private boundaryText = "";
   @state() private boundaryVisible = false;
   @state() private timelinePct = 100;
-  @state() private timelineDots: number[] = [];
+  @state() private timelineNodes: { pct: number; passed: boolean; current: boolean }[] = [];
+
+  // Cached data from last content message for re-rendering on mode switch
+  private lastHighlightedLines: HighlightedLine[] = [];
+  private lastDiffLines: number[] = [];
+  private lastBlame: Record<number, string> = {};
+  private lastDeletedRanges: DeletedRange[] = [];
 
   private lastScrollTime = 0;
   private syncingScroll = false;
@@ -70,23 +78,47 @@ export class TimewarpApp extends LitElement {
     switch (msg.type) {
       case "init":
         this.totalCommits = msg.totalCommits || 1;
+        this.totalLocalEntries = msg.totalLocalEntries || 0;
+        this.timelineMode = msg.timelineMode;
+        this.lastHighlightedLines = msg.highlightedLines;
+        this.lastDiffLines = [];
+        this.lastBlame = {};
+        this.lastDeletedRanges = [];
         this.renderMainCode(msg.highlightedLines, [], {}, []);
         this.statusText = msg.fileName + " \u00b7 " + this.totalCommits + " commits";
         this.commitMessageText = "";
         this.commitAuthorText = "";
         this.timelinePct = 100;
-        this.renderTimelineDotPositions(this.totalCommits);
+        this.renderTimelineNodes(this.totalCommits);
         this.scrollLineOnInit = msg.scrollLine || 0;
+        // Restore saved split-pane mode
+        if (msg.splitMode) {
+          this.toggleSplit(msg.splitMode);
+        }
         break;
 
       case "content": {
-        const showDeletions = this.splitMode !== "previous" ? (msg.deletedRanges || []) : [];
-        this.renderMainCode(msg.highlightedLines, msg.diffLines || [], msg.blame || {}, showDeletions);
+        this.lastHighlightedLines = msg.highlightedLines;
+        this.lastDiffLines = msg.diffLines || [];
+        this.lastBlame = msg.blame || {};
+        this.lastDeletedRanges = msg.deletedRanges || [];
+        const showDeletions = this.splitMode !== "previous" ? this.lastDeletedRanges : [];
+        this.renderMainCode(msg.highlightedLines, this.lastDiffLines, this.lastBlame, showDeletions);
+        if (msg.totalEntries !== undefined) {
+          this.totalCommits = msg.totalEntries;
+          this.timelinePct = 100;
+          this.renderTimelineNodes(this.totalCommits);
+          // Mode switched — refresh split pane if open so it doesn't show stale content
+          if (this.splitMode) {
+            this.postMessage({ type: this.splitMode === "present" ? "request-present" : "request-previous" });
+          }
+        }
         if (msg.stepsBack === 0) {
           this.statusText = "Present";
           this.commitMessageText = "";
           this.commitAuthorText = "";
           this.timelinePct = 100;
+          if (msg.totalEntries === undefined) this.updateCurrentNode();
         } else {
           this.statusText = msg.stepsBack + " back \u00b7 " + msg.ago;
           this.commitMessageText = msg.commitMessage || "";
@@ -132,6 +164,12 @@ export class TimewarpApp extends LitElement {
     this.vscode.postMessage(msg);
   }
 
+  private setTimelineMode(mode: TimelineMode) {
+    if (this.timelineMode === mode) return;
+    this.timelineMode = mode;
+    this.postMessage({ type: "set-timeline-mode", mode });
+  }
+
   private handleWheel = (e: WheelEvent) => {
     if (e.altKey) {
       e.preventDefault();
@@ -151,9 +189,16 @@ export class TimewarpApp extends LitElement {
     if (this.splitMode === mode) {
       this.splitMode = "";
       this.classList.remove("split-view");
+      // Re-render main pane to restore deleted overlays
+      this.renderMainCode(this.lastHighlightedLines, this.lastDiffLines, this.lastBlame, this.lastDeletedRanges);
+      this.postMessage({ type: "set-split-mode", mode: "" });
     } else {
       this.splitMode = mode;
       this.classList.add("split-view");
+
+      // Re-render main pane: hide deleted overlays in "previous" mode
+      const showDeletions = mode === "previous" ? [] : this.lastDeletedRanges;
+      this.renderMainCode(this.lastHighlightedLines, this.lastDiffLines, this.lastBlame, showDeletions);
 
       if (mode === "present") {
         this.splitLabelText = "Present";
@@ -162,6 +207,16 @@ export class TimewarpApp extends LitElement {
         this.splitLabelText = "Previous commit";
         this.postMessage({ type: "request-previous" });
       }
+      this.postMessage({ type: "set-split-mode", mode });
+
+      // Sync scroll positions after the DOM updates
+      this.updateComplete.then(() => {
+        const historyScroll = this.shadowRoot?.getElementById("history-scroll");
+        const splitScroll = this.shadowRoot?.getElementById("split-scroll");
+        if (historyScroll && splitScroll) {
+          splitScroll.scrollTop = historyScroll.scrollTop;
+        }
+      });
     }
   }
 
@@ -208,6 +263,14 @@ export class TimewarpApp extends LitElement {
     }));
     this.computeSplitMinimapMarkers(diffLines || [], highlightedLines.length);
     this.syncPaneHeights();
+    // Sync scroll after split content renders
+    this.updateComplete.then(() => {
+      const historyScroll = this.shadowRoot?.getElementById("history-scroll");
+      const splitScroll = this.shadowRoot?.getElementById("split-scroll");
+      if (historyScroll && splitScroll) {
+        splitScroll.scrollTop = historyScroll.scrollTop;
+      }
+    });
   }
 
   private syncPaneHeights() {
@@ -293,22 +356,46 @@ export class TimewarpApp extends LitElement {
       return;
     }
     this.timelinePct = ((this.totalCommits - stepsBack) / this.totalCommits) * 100;
+    this.updateCurrentNode();
   }
 
-  private renderTimelineDotPositions(count: number) {
-    if (count <= 1) {
-      this.timelineDots = [];
+  private renderTimelineNodes(count: number) {
+    if (count < 1) {
+      this.timelineNodes = [];
       return;
     }
-    const maxDots = 60;
-    const dotsToRender = Math.min(count, maxDots);
-    const dots: number[] = [];
-    for (let i = 0; i < dotsToRender; i++) {
-      const commitIdx = dotsToRender === count ? i : Math.round(i * (count - 1) / (dotsToRender - 1));
-      const pct = (commitIdx / count) * 100;
-      dots.push(pct);
+    // count entries + 1 "present" position = count+1 total stops
+    const totalStops = count + 1;
+    const maxNodes = 40;
+    const nodesToRender = Math.min(totalStops, maxNodes);
+    const nodes: { pct: number; passed: boolean; current: boolean }[] = [];
+    for (let i = 0; i < nodesToRender; i++) {
+      const stopIdx = nodesToRender === totalStops
+        ? i
+        : Math.round(i * count / (nodesToRender - 1));
+      const pct = (stopIdx / count) * 100;
+      nodes.push({ pct, passed: pct <= this.timelinePct, current: false });
     }
-    this.timelineDots = dots;
+    this.timelineNodes = nodes;
+    this.updateCurrentNode();
+  }
+
+  private updateCurrentNode() {
+    // Mark the node closest to timelinePct as "current"
+    let closestIdx = -1;
+    let closestDist = Infinity;
+    for (let i = 0; i < this.timelineNodes.length; i++) {
+      const dist = Math.abs(this.timelineNodes[i].pct - this.timelinePct);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = i;
+      }
+    }
+    this.timelineNodes = this.timelineNodes.map((n, i) => ({
+      ...n,
+      passed: n.pct <= this.timelinePct,
+      current: i === closestIdx,
+    }));
   }
 
   private showBoundary(text: string) {
@@ -363,6 +450,18 @@ export class TimewarpApp extends LitElement {
     return html`
       <div id="status-bar">
         <span class="position">${this.statusText}</span>
+        <span class="timeline-toggle">
+          <button
+            class=${this.timelineMode === "git" ? "active" : ""}
+            title="Show git commits only"
+            @click=${() => this.setTimelineMode("git")}
+          >⎇ Git</button>
+          <button
+            class=${this.timelineMode === "local" ? "active" : ""}
+            title="Show local saves only"
+            @click=${() => this.setTimelineMode("local")}
+          >⟳ Local</button>
+        </span>
         <span class="actions">
           <button
             class=${this.splitMode === "present" ? "active" : ""}
@@ -380,10 +479,10 @@ export class TimewarpApp extends LitElement {
       <div id="timeline">
         <span id="timeline-label-left">oldest</span>
         <div id="timeline-track">
-          <div id="timeline-progress" style="width:${this.timelinePct}%"></div>
-          <div id="timeline-cursor" style="left:${this.timelinePct}%"></div>
-          ${this.timelineDots.map(
-            (pct) => html`<div class="timeline-dot" style="left:${pct}%"></div>`,
+          <div id="timeline-line"></div>
+          <div id="timeline-line-progress" style="width:${this.timelinePct}%"></div>
+          ${this.timelineNodes.map(
+            (node) => html`<div class="timeline-node ${node.passed ? "passed" : ""} ${node.current ? "current" : ""}" style="left:${node.pct}%"></div>`,
           )}
         </div>
         <span id="timeline-label-right">now</span>
@@ -504,6 +603,38 @@ export class TimewarpApp extends LitElement {
       white-space: nowrap;
     }
 
+    .timeline-toggle {
+      display: flex;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--vscode-button-border, #555);
+    }
+
+    .timeline-toggle button {
+      background: none;
+      border: none;
+      border-right: 1px solid var(--vscode-button-border, #555);
+      color: var(--vscode-foreground, #ccc);
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    .timeline-toggle button:last-child {
+      border-right: none;
+    }
+
+    .timeline-toggle button:hover {
+      background: var(--vscode-toolbar-hoverBackground, rgba(90,93,94,0.31));
+    }
+
+    .timeline-toggle button.active {
+      background: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #fff);
+    }
+
     #status-bar .actions {
       display: flex;
       gap: 4px;
@@ -573,7 +704,7 @@ export class TimewarpApp extends LitElement {
       top: 28px;
       left: 0;
       right: 0;
-      height: 24px;
+      height: 32px;
       background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
       display: flex;
       align-items: center;
@@ -585,46 +716,58 @@ export class TimewarpApp extends LitElement {
     #timeline-track {
       position: relative;
       flex: 1;
-      height: 6px;
-      background: var(--vscode-editorWidget-border, #3c3c3c);
-      border-radius: 3px;
+      height: 32px;
       margin: 0 10px;
+      display: flex;
+      align-items: center;
       overflow: visible;
     }
 
-    #timeline-progress {
+    #timeline-line {
       position: absolute;
-      top: 0;
+      top: 50%;
       left: 0;
-      height: 100%;
-      background: linear-gradient(90deg, var(--vscode-progressBar-background, #0e70c0), var(--vscode-textLink-foreground, #3794ff));
-      border-radius: 3px;
+      right: 0;
+      height: 2px;
+      background: var(--vscode-editorWidget-border, #3c3c3c);
+      transform: translateY(-50%);
+    }
+
+    #timeline-line-progress {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      height: 2px;
+      background: var(--vscode-textLink-foreground, #3794ff);
+      transform: translateY(-50%);
       transition: width 120ms ease-out;
     }
 
-    #timeline-cursor {
+    .timeline-node {
       position: absolute;
       top: 50%;
-      width: 12px;
-      height: 12px;
-      background: var(--vscode-editor-foreground, #d4d4d4);
-      border: 2px solid var(--vscode-editorGroupHeader-tabsBackground, #252526);
+      width: 8px;
+      height: 8px;
+      background: var(--vscode-editorWidget-border, #3c3c3c);
+      border: 2px solid var(--vscode-editorWidget-border, #3c3c3c);
       border-radius: 50%;
       transform: translate(-50%, -50%);
-      transition: left 120ms ease-out;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-      z-index: 2;
+      transition: all 120ms ease-out;
+      z-index: 1;
     }
 
-    .timeline-dot {
-      position: absolute;
-      top: 50%;
-      width: 4px;
-      height: 4px;
-      background: var(--vscode-editorLineNumber-foreground, #858585);
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      opacity: 0.5;
+    .timeline-node.passed {
+      background: var(--vscode-textLink-foreground, #3794ff);
+      border-color: var(--vscode-textLink-foreground, #3794ff);
+    }
+
+    .timeline-node.current {
+      width: 14px;
+      height: 14px;
+      background: var(--vscode-editor-foreground, #d4d4d4);
+      border-color: var(--vscode-textLink-foreground, #3794ff);
+      box-shadow: 0 0 8px rgba(55, 148, 255, 0.6);
+      z-index: 2;
     }
 
     #timeline-label-left,
@@ -638,7 +781,7 @@ export class TimewarpApp extends LitElement {
 
     #editors-wrapper {
       position: fixed;
-      top: 52px;
+      top: 60px;
       left: 0;
       right: 0;
       bottom: 24px;
