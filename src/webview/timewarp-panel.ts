@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { basename } from "node:path";
 import { getFileHistory, getBlameForLines } from "../git/history-provider.js";
 import { getFileAtCommit } from "../git/content-provider.js";
 import { getLocalHistory, getFileAtLocalEntry } from "../history/local-history-provider.js";
@@ -70,7 +71,7 @@ export class TimewarpWebviewPanel {
     this.currentContent = new TextDecoder().decode(bytes);
 
     // Create webview panel
-    const fileName = this.filePath.split("/").pop() || "file";
+    const fileName = basename(this.filePath) || "file";
     this.panel = vscode.window.createWebviewPanel(
       "gitTimewarp.scrollView",
       fileName,

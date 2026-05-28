@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { dirname } from "node:path";
 import { LRUCache } from "../cache/lru-cache.js";
 
 const cache = new LRUCache<string, string | null>(50);
@@ -51,11 +52,12 @@ async function getRelativePath(filePath: string): Promise<string | null> {
   }
 }
 
-function execGit(args: string[], cwd: string): Promise<string> {
+function execGit(args: string[], filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const dir = cwd.includes("/") ? cwd.substring(0, cwd.lastIndexOf("/")) : cwd;
+    // Use the directory of the file as cwd (cross-platform path handling)
+    const dir = dirname(filePath);
 
-    execFile("git", args, { cwd: dir, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+    execFile("git", args, { cwd: dir, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
       if (error) {
         reject(error);
         return;

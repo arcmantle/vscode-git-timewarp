@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { dirname } from "node:path";
 import type { Commit } from "./types.js";
 
 const GIT_LOG_FORMAT = "%H%n%an%n%aI%n%s";
@@ -175,12 +176,12 @@ function parseGitLog(output: string): Commit[] {
   return commits;
 }
 
-function execGit(args: string[], cwd: string): Promise<string> {
+function execGit(args: string[], filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Use the directory of the file as cwd
-    const dir = cwd.includes("/") ? cwd.substring(0, cwd.lastIndexOf("/")) : cwd;
+    // Use the directory of the file as cwd (cross-platform path handling)
+    const dir = dirname(filePath);
 
-    execFile("git", args, { cwd: dir, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+    execFile("git", args, { cwd: dir, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
       if (error) {
         reject(error);
         return;
