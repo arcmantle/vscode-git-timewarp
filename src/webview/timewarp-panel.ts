@@ -58,7 +58,7 @@ export class TimewarpWebviewPanel {
 
     if (savedTimelineMode === "local") {
       const localHistory = config.includeLocalHistory
-        ? await getLocalHistory(this.fileUri, this.globalStorageUri)
+        ? await getLocalHistory(this.fileUri, this.globalStorageUri, this.memento)
         : [];
       this.timeline.addLocalHistory(localHistory);
       this.localHistoryLoaded = true;
@@ -140,7 +140,7 @@ export class TimewarpWebviewPanel {
           if (msg.mode === "local" && !this.localHistoryLoaded) {
             const config = getConfig();
             const localHistory = config.includeLocalHistory
-              ? await getLocalHistory(this.fileUri, this.globalStorageUri)
+              ? await getLocalHistory(this.fileUri, this.globalStorageUri, this.memento)
               : [];
             this.timeline.addLocalHistory(localHistory);
             this.localHistoryLoaded = true;
