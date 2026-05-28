@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Timewarp - Timeline Variations</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 40px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    p.subtitle {
+      color: #888;
+      margin-bottom: 40px;
+      font-size: 13px;
+    }
+    .variation {
+      margin-bottom: 60px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 24px;
+      background: #252526;
+    }
+    .variation h2 {
+      font-size: 14px;
+      color: #3794ff;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .variation p {
+      color: #888;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    .timeline-container {
+      display: flex;
+      align-items: center;
+      height: 48px;
+      padding: 0 12px;
+      background: #1e1e1e;
+      border-radius: 6px;
+    }
+    .label {
+      font-size: 9px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    /* ─── Variation 1: Neon Pulse ─── */
+    .v1-track {
+      position: relative;
+      flex: 1;
+      height: 4px;
+      margin: 0 14px;
+      background: #2a2a2a;
+      border-radius: 2px;
+      overflow: visible;
+    }
+    .v1-progress {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 65%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #0ff, #3794ff, #b266ff);
+      box-shadow: 0 0 8px rgba(0, 255, 255, 0.4), 0 0 20px rgba(55, 148, 255, 0.2);
+      animation: neonPulse 2s ease-in-out infinite;
+    }
+    .v1-cursor {
+      position: absolute;
+      top: 50%;
+      left: 65%;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border: 2px solid #3794ff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px rgba(55, 148, 255, 0.8), 0 0 4px #fff;
+      z-index: 2;
+    }
+    .v1-dot {
+      position: absolute;
+      top: 50%;
+      width: 3px;
+      height: 3px;
+      background: #0ff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.6;
+    }
+    @keyframes neonPulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 255, 0.4), 0 0 20px rgba(55, 148, 255, 0.2); }
+      50% { box-shadow: 0 0 14px rgba(0, 255, 255, 0.7), 0 0 30px rgba(55, 148, 255, 0.4); }
+    }
+
+    /* ─── Variation 2: Minimal Segments ─── */
+    .v2-track {
+      position: relative;
+      flex: 1;
+      height: 24px;
+      margin: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .v2-segment {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: #333;
+      transition: background 0.2s;
+    }
+    .v2-segment.active {
+      background: #3794ff;
+    }
+    .v2-segment.current {
+      background: #fff;
+      box-shadow: 0 0 6px rgba(255,255,255,0.5);
+    }
+
+    /* ─── Variation 3: Gradient Ribbon ─── */
+    .v3-track {
+      position: relative;
+      flex: 1;
+      height: 8px;
+      margin: 0 14px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #1a1a2e, #16213e, #0f3460);
+      overflow: visible;
+    }
+    .v3-progress {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 65%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #e94560, #ff6b6b, #feca57, #48dbfb, #0abde3);
+      background-size: 200% 100%;
+      animation: rainbowShift 4s linear infinite;
+    }
+    .v3-cursor {
+      position: absolute;
+      top: 50%;
+      left: 65%;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      z-index: 2;
+    }
+    .v3-cursor::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      background: linear-gradient(135deg, #e94560, #48dbfb);
+      border-radius: 50%;
+    }
+    @keyframes rainbowShift {
+      0% { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+
+    /* ─── Variation 4: Commit Nodes ─── */
+    .v4-track {
+      position: relative;
+      flex: 1;
+      height: 32px;
+      margin: 0 14px;
+      display: flex;
+      align-items: center;
+    }
+    .v4-line {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #333;
+      transform: translateY(-50%);
+    }
+    .v4-line-progress {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 65%;
+      height: 2px;
+      background: #3794ff;
+      transform: translateY(-50%);
+    }
+    .v4-node {
+      position: absolute;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      background: #555;
+      border: 2px solid #333;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: all 0.2s;
+    }
+    .v4-node.passed {
+      background: #3794ff;
+      border-color: #3794ff;
+    }
+    .v4-node.current {
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-color: #3794ff;
+      box-shadow: 0 0 8px rgba(55, 148, 255, 0.6);
+    }
+    .v4-node-label {
+      position: absolute;
+      top: calc(50% + 12px);
+      font-size: 8px;
+      color: #666;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    /* ─── Variation 5: Wave / Audio Style ─── */
+    .v5-track {
+      position: relative;
+      flex: 1;
+      height: 32px;
+      margin: 0 14px;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+    }
+    .v5-bar {
+      flex: 1;
+      min-width: 3px;
+      max-width: 6px;
+      background: #333;
+      border-radius: 2px 2px 0 0;
+      transition: background 0.2s, height 0.3s;
+    }
+    .v5-bar.active {
+      background: #3794ff;
+    }
+    .v5-bar.current {
+      background: #fff;
+    }
+    .v5-cursor-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 65%;
+      width: 2px;
+      background: rgba(255,255,255,0.6);
+      z-index: 2;
+    }
+
+    /* ─── Variation 6: Orbital / Sci-fi ─── */
+    .v6-track {
+      position: relative;
+      flex: 1;
+      height: 36px;
+      margin: 0 14px;
+      overflow: visible;
+    }
+    .v6-rail {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #3794ff 10%, #3794ff 90%, transparent);
+      transform: translateY(-50%);
+      opacity: 0.4;
+    }
+    .v6-rail-glow {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 65%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, #0ff 50%, #3794ff 100%);
+      transform: translateY(-50%);
+      box-shadow: 0 0 6px #0ff, 0 0 12px rgba(55, 148, 255, 0.3);
+    }
+    .v6-particle {
+      position: absolute;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: orbitFloat 3s ease-in-out infinite;
+    }
+    .v6-particle.p1 { left: 20%; background: #0ff; opacity: 0.5; animation-delay: 0s; }
+    .v6-particle.p2 { left: 40%; background: #3794ff; opacity: 0.6; animation-delay: 0.5s; }
+    .v6-particle.p3 { left: 55%; background: #b266ff; opacity: 0.5; animation-delay: 1s; }
+    .v6-cursor-hex {
+      position: absolute;
+      top: 50%;
+      left: 65%;
+      width: 18px;
+      height: 18px;
+      background: #0ff;
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 12px #0ff;
+      z-index: 2;
+    }
+    .v6-cursor-hex::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      background: #1e1e1e;
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    }
+    @keyframes orbitFloat {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+      50% { transform: translate(-50%, calc(-50% - 4px)) scale(1.3); opacity: 0.9; }
+    }
+
+    /* ─── Git / Local Toggle ─── */
+    .toggle-demo {
+      margin-top: 60px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 24px;
+      background: #252526;
+    }
+    .toggle-demo h2 {
+      font-size: 14px;
+      color: #3794ff;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .toggle-demo p {
+      color: #888;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    .status-bar-demo {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      background: #1e1e1e;
+      border-radius: 6px;
+      padding: 0 12px;
+      font-size: 12px;
+      gap: 10px;
+    }
+    .status-bar-demo .position {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .toggle-group {
+      display: flex;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #555;
+    }
+    .toggle-group button {
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 11px;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .toggle-group button:not(:last-child) {
+      border-right: 1px solid #555;
+    }
+    .toggle-group button:hover {
+      background: rgba(90,93,94,0.31);
+    }
+    .toggle-group button.active {
+      background: #0e639c;
+      color: #fff;
+    }
+    .actions-group {
+      display: flex;
+      gap: 4px;
+    }
+    .actions-group button {
+      background: none;
+      border: 1px solid #555;
+      color: #ccc;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .actions-group button.active {
+      background: #0e639c;
+      border-color: #0e639c;
+      color: #fff;
+    }
+    .hint {
+      margin-left: auto;
+      opacity: 0.5;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Timeline Design Variations</h1>
+  <p class="subtitle">Each variation shows position at ~65% (about 35% back in history). Click to interact where applicable.</p>
+
+  <!-- Variation 1: Neon Pulse -->
+  <div class="variation">
+    <h2>1 · Neon Pulse</h2>
+    <p>Glowing gradient with pulsing shadow. Sci-fi aesthetic. Dots show individual commits.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v1-track">
+        <div class="v1-progress"></div>
+        <div class="v1-cursor"></div>
+        <div class="v1-dot" style="left:5%"></div>
+        <div class="v1-dot" style="left:12%"></div>
+        <div class="v1-dot" style="left:18%"></div>
+        <div class="v1-dot" style="left:24%"></div>
+        <div class="v1-dot" style="left:33%"></div>
+        <div class="v1-dot" style="left:38%"></div>
+        <div class="v1-dot" style="left:45%"></div>
+        <div class="v1-dot" style="left:52%"></div>
+        <div class="v1-dot" style="left:58%"></div>
+        <div class="v1-dot" style="left:72%"></div>
+        <div class="v1-dot" style="left:80%"></div>
+        <div class="v1-dot" style="left:88%"></div>
+        <div class="v1-dot" style="left:95%"></div>
+      </div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Variation 2: Minimal Segments -->
+  <div class="variation">
+    <h2>2 · Minimal Segments</h2>
+    <p>Each segment = one commit. Clean and readable. Current commit is highlighted white.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v2-track" id="v2-track"></div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Variation 3: Gradient Ribbon -->
+  <div class="variation">
+    <h2>3 · Gradient Ribbon</h2>
+    <p>Animated rainbow gradient ribbon. Playful / creative feel. Thick track with inner-glow cursor.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v3-track">
+        <div class="v3-progress"></div>
+        <div class="v3-cursor"></div>
+      </div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Variation 4: Commit Nodes -->
+  <div class="variation">
+    <h2>4 · Commit Nodes</h2>
+    <p>Git-graph inspired. Each node is a commit with optional label. Larger node = current position.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v4-track">
+        <div class="v4-line"></div>
+        <div class="v4-line-progress"></div>
+        <div class="v4-node passed" style="left:5%"></div>
+        <div class="v4-node passed" style="left:15%"><span class="v4-node-label">v1.0</span></div>
+        <div class="v4-node passed" style="left:28%"></div>
+        <div class="v4-node passed" style="left:40%"><span class="v4-node-label">v1.1</span></div>
+        <div class="v4-node passed" style="left:52%"></div>
+        <div class="v4-node current" style="left:65%"><span class="v4-node-label">HEAD</span></div>
+        <div class="v4-node" style="left:78%"></div>
+        <div class="v4-node" style="left:88%"></div>
+        <div class="v4-node" style="left:97%"></div>
+      </div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Variation 5: Audio Wave -->
+  <div class="variation">
+    <h2>5 · Audio Waveform</h2>
+    <p>Bar heights represent change magnitude per commit. Gives a visual "heartbeat" of activity.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v5-track" id="v5-track">
+        <div class="v5-cursor-line"></div>
+      </div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Variation 6: Orbital / Sci-fi -->
+  <div class="variation">
+    <h2>6 · Orbital</h2>
+    <p>Floating particles along a glowing rail. Hexagonal cursor. Maximum sci-fi vibes.</p>
+    <div class="timeline-container">
+      <span class="label">oldest</span>
+      <div class="v6-track">
+        <div class="v6-rail"></div>
+        <div class="v6-rail-glow"></div>
+        <div class="v6-particle p1"></div>
+        <div class="v6-particle p2"></div>
+        <div class="v6-particle p3"></div>
+        <div class="v6-cursor-hex"></div>
+      </div>
+      <span class="label">now</span>
+    </div>
+  </div>
+
+  <!-- Git / Local Toggle Demo -->
+  <div class="toggle-demo">
+    <h2>Status Bar – Git / Local Toggle</h2>
+    <p>Toggle button to switch between git commit history and local (unsaved) change timeline.</p>
+
+    <h2 style="margin-top:20px; color:#888; font-size:11px;">Option A: Segmented toggle</h2>
+    <div class="status-bar-demo" style="margin-bottom:12px;">
+      <span class="position">config.ts · 35 commits</span>
+      <div class="toggle-group">
+        <button class="active" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Git</button>
+        <button onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Local</button>
+      </div>
+      <span class="actions-group">
+        <button class="active">vs Present</button>
+        <button>vs Previous</button>
+      </span>
+      <span class="hint">Alt+Scroll · Escape to exit</span>
+    </div>
+
+    <h2 style="color:#888; font-size:11px;">Option B: Icon-style toggle (compact)</h2>
+    <div class="status-bar-demo" style="margin-bottom:12px;">
+      <span class="position">config.ts · 35 commits</span>
+      <div class="toggle-group">
+        <button class="active" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Git history">⎇ Git</button>
+        <button onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')" title="Local saves">⟳ Local</button>
+      </div>
+      <span class="actions-group">
+        <button class="active">vs Present</button>
+        <button>vs Previous</button>
+      </span>
+      <span class="hint">Alt+Scroll · Escape to exit</span>
+    </div>
+
+    <h2 style="color:#888; font-size:11px;">Option C: Combined timeline with filter</h2>
+    <div class="status-bar-demo">
+      <span class="position">config.ts · 35 commits + 12 local saves</span>
+      <div class="toggle-group">
+        <button class="active" onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">All</button>
+        <button onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Git</button>
+        <button onclick="this.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Local</button>
+      </div>
+      <span class="actions-group">
+        <button class="active">vs Present</button>
+        <button>vs Previous</button>
+      </span>
+      <span class="hint">Alt+Scroll · Escape to exit</span>
+    </div>
+  </div>
+
+  <script>
+    // Generate segments for variation 2
+    const v2 = document.getElementById('v2-track');
+    const totalSegments = 20;
+    const currentIdx = 13; // ~65%
+    for (let i = 0; i < totalSegments; i++) {
+      const seg = document.createElement('div');
+      seg.className = 'v2-segment' + (i < currentIdx ? ' active' : '') + (i === currentIdx ? ' current' : '');
+      v2.appendChild(seg);
+    }
+
+    // Generate bars for variation 5
+    const v5 = document.getElementById('v5-track');
+    const barCount = 40;
+    const heights = [];
+    for (let i = 0; i < barCount; i++) {
+      // Simulate varying change sizes
+      heights.push(4 + Math.random() * 24);
+    }
+    const currentBar = Math.floor(barCount * 0.65);
+    for (let i = 0; i < barCount; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'v5-bar' + (i <= currentBar ? ' active' : '') + (i === currentBar ? ' current' : '');
+      bar.style.height = heights[i] + 'px';
+      v5.appendChild(bar);
+    }
+  </script>
+</body>
+</html>
