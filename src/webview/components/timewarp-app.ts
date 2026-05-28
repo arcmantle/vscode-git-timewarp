@@ -152,10 +152,12 @@ export class TimewarpApp extends LitElement {
     }
     if (e.altKey && e.code === "KeyS") {
       e.preventDefault();
+      if (e.repeat) return;
       this.toggleSplit("present");
     }
     if (e.altKey && e.code === "KeyD") {
       e.preventDefault();
+      if (e.repeat) return;
       this.toggleSplit("previous");
     }
   };

@@ -5,7 +5,9 @@ import { createHighlighter, type Highlighter, type BundledLanguage } from "shiki
 import type { HighlightedLine } from "./messages.js";
 
 let highlighterInstance: Highlighter | null = null;
-let loadedThemeName: string | null = null;
+let loadedThemeSetting: string | null = null;
+let loadedShikiThemeName: string | null = null;
+let highlighterPromise: Promise<{ highlighter: Highlighter; themeName: string }> | null = null;
 
 const SUPPORTED_LANGUAGES: BundledLanguage[] = [
   "typescript",
@@ -101,44 +103,60 @@ async function getHighlighter(): Promise<{ highlighter: Highlighter; themeName: 
   const currentThemeSetting = vscode.workspace.getConfiguration("workbench").get<string>("colorTheme") || "";
 
   // Re-use if theme hasn't changed
-  if (highlighterInstance && loadedThemeName === currentThemeSetting) {
-    return { highlighter: highlighterInstance, themeName: loadedThemeName };
+  if (highlighterInstance && loadedThemeSetting === currentThemeSetting && loadedShikiThemeName) {
+    return { highlighter: highlighterInstance, themeName: loadedShikiThemeName };
   }
 
-  // Dispose old instance
-  if (highlighterInstance) {
-    highlighterInstance.dispose();
-    highlighterInstance = null;
-  }
+  // Coalesce concurrent (re)initialization to avoid disposing an instance another caller is about to use
+  if (highlighterPromise) return highlighterPromise;
 
-  // Try to load the user's actual theme
-  const userTheme = await loadUserTheme();
-
-  if (userTheme) {
-    try {
-      highlighterInstance = await createHighlighter({
-        themes: [userTheme as never],
-        langs: SUPPORTED_LANGUAGES,
-      });
-      loadedThemeName = currentThemeSetting;
-      return { highlighter: highlighterInstance, themeName: (userTheme as { name: string }).name };
-    } catch {
-      // Fall through to bundled themes
+  highlighterPromise = (async () => {
+    // Dispose old instance
+    if (highlighterInstance) {
+      highlighterInstance.dispose();
+      highlighterInstance = null;
     }
+
+    // Try to load the user's actual theme
+    const userTheme = await loadUserTheme();
+
+    if (userTheme) {
+      try {
+        const themeName = (userTheme as { name?: string }).name || currentThemeSetting || "user-theme";
+        // Ensure the loaded theme object exposes the name we'll query shiki with
+        (userTheme as { name: string }).name = themeName;
+        highlighterInstance = await createHighlighter({
+          themes: [userTheme as never],
+          langs: SUPPORTED_LANGUAGES,
+        });
+        loadedThemeSetting = currentThemeSetting;
+        loadedShikiThemeName = themeName;
+        return { highlighter: highlighterInstance, themeName };
+      } catch {
+        // Fall through to bundled themes
+      }
+    }
+
+    // Fallback to bundled dark-plus / light-plus
+    const kind = vscode.window.activeColorTheme.kind;
+    const fallbackTheme = kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast
+      ? "dark-plus"
+      : "light-plus";
+
+    highlighterInstance = await createHighlighter({
+      themes: [fallbackTheme],
+      langs: SUPPORTED_LANGUAGES,
+    });
+    loadedThemeSetting = currentThemeSetting;
+    loadedShikiThemeName = fallbackTheme;
+    return { highlighter: highlighterInstance, themeName: fallbackTheme };
+  })();
+
+  try {
+    return await highlighterPromise;
+  } finally {
+    highlighterPromise = null;
   }
-
-  // Fallback to bundled dark-plus / light-plus
-  const kind = vscode.window.activeColorTheme.kind;
-  const fallbackTheme = kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast
-    ? "dark-plus"
-    : "light-plus";
-
-  highlighterInstance = await createHighlighter({
-    themes: [fallbackTheme],
-    langs: SUPPORTED_LANGUAGES,
-  });
-  loadedThemeName = currentThemeSetting;
-  return { highlighter: highlighterInstance, themeName: fallbackTheme };
 }
 
 export async function highlightCode(code: string, language: string): Promise<HighlightedLine[]> {
@@ -164,7 +182,8 @@ export async function highlightCode(code: string, language: string): Promise<Hig
 }
 
 export function invalidateHighlighter(): void {
-  loadedThemeName = null;
+  loadedThemeSetting = null;
+  loadedShikiThemeName = null;
   if (highlighterInstance) {
     highlighterInstance.dispose();
     highlighterInstance = null;
@@ -172,6 +191,8 @@ export function invalidateHighlighter(): void {
 }
 
 export function disposeHighlighter(): void {
+  loadedThemeSetting = null;
+  loadedShikiThemeName = null;
   if (highlighterInstance) {
     highlighterInstance.dispose();
     highlighterInstance = null;
