@@ -2,7 +2,7 @@
 	"name": "vscode-git-timewarp",
 	"displayName": "Git Timewarp",
 	"description": "Navigate through a file's history in-place with keyboard shortcuts — treating time as a navigable dimension in the editor.",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"publisher": "arcmantle",
 	"license": "MIT",
 	"repository": {
@@ -21,7 +21,8 @@
 		"onCommand:gitTimewarp.back",
 		"onCommand:gitTimewarp.forward",
 		"onCommand:gitTimewarp.returnToPresent",
-		"onCommand:gitTimewarp.enterTimewarpView"
+		"onCommand:gitTimewarp.enterTimewarpView",
+		"onCommand:gitTimewarp.showLocalHistoryDiagnostics"
 	],
 	"main": "./dist/extension.mjs",
 	"contributes": {
@@ -41,6 +42,10 @@
 			{
 				"command": "gitTimewarp.enterTimewarpView",
 				"title": "Git Timewarp: Enter Scroll Mode"
+			},
+			{
+				"command": "gitTimewarp.showLocalHistoryDiagnostics",
+				"title": "Git Timewarp: Show Local History Diagnostics"
 			}
 		],
 		"keybindings": [

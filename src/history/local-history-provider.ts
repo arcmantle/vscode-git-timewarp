@@ -6,6 +6,48 @@ interface HistoryEntriesJson {
   entries: { id: string; timestamp: number; source?: string }[];
 }
 
+// Lazy output channel for diagnostics. Created on first log; users can
+// view it via View → Output → "Git Timewarp".
+let _output: vscode.OutputChannel | undefined;
+function log(msg: string): void {
+  if (!_output) _output = vscode.window.createOutputChannel("Git Timewarp");
+  _output.appendLine(`[${new Date().toISOString()}] ${msg}`);
+}
+
+export function getOutputChannel(): vscode.OutputChannel {
+  if (!_output) _output = vscode.window.createOutputChannel("Git Timewarp");
+  return _output;
+}
+
+/**
+ * Windows file URIs are case-insensitive on disk. Normalize for comparison
+ * by lowercasing the drive letter portion of the path. We deliberately do
+ * NOT lowercase the whole string because the rest of the path may be
+ * case-sensitive on some filesystems.
+ */
+function normalizeForCompare(uriStr: string): string {
+  // file:///C%3A/... -> file:///c%3A/...
+  return uriStr.replace(/^(file:\/\/\/)([A-Z])(%3A|%3a|:)/i, (_, p, d, c) =>
+    `${p}${d.toLowerCase()}${c.toLowerCase()}`,
+  );
+}
+
+function resourceMatches(stored: string, requested: string): boolean {
+  if (stored === requested) return true;
+  // Try a normalized comparison so Windows drive-letter casing variants match.
+  if (normalizeForCompare(stored) === normalizeForCompare(requested)) return true;
+  // Last resort: compare as fsPath (handles encoding differences).
+  try {
+    const a = vscode.Uri.parse(stored).fsPath;
+    const b = vscode.Uri.parse(requested).fsPath;
+    return process.platform === "win32"
+      ? a.toLowerCase() === b.toLowerCase()
+      : a === b;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Replicates VS Code's internal hash function used to name local history directories.
  * Source: workbench.desktop.main.js — `yr(uri.toString()).toString(16)`
@@ -34,8 +76,10 @@ function vscodeHistoryHash(str: string): string {
 const dirNameCache = new Map<string, string>();
 // Negative cache: URIs known to have no local-history entry. Avoids
 // re-scanning the entire history root every time the user navigates an
-// unrelated file.
-const missingCache = new Set<string>();
+// unrelated file. Entries expire after MISSING_TTL_MS so newly created
+// history is eventually picked up without an extension reload.
+const MISSING_TTL_MS = 30_000;
+const missingCache = new Map<string, number>();
 // Dedupe concurrent scans for the same URI.
 const inflightScans = new Map<
   string,
@@ -120,7 +164,7 @@ async function scanHistoryRoot(
       batch.map(async (name) => ({ name, model: await tryReadEntries(historyRoot, name) })),
     );
     for (const { name, model } of results) {
-      if (model && model.resource === fileUriStr) {
+      if (model && resourceMatches(model.resource, fileUriStr)) {
         return { dirName: name, model };
       }
     }
@@ -145,16 +189,31 @@ async function findHistoryDir(
   const hashName = vscodeHistoryHash(fileUriStr);
   const cachedName = dirNameCache.get(fileUriStr) ?? hashName;
 
+  log(`findHistoryDir: file=${fileUriStr}`);
+  log(`  historyRoot=${historyRoot.toString()}`);
+  log(`  hashName=${hashName} cachedName=${cachedName}`);
+
   const direct = await tryReadEntries(historyRoot, cachedName);
-  if (direct && direct.resource === fileUriStr) {
-    dirNameCache.set(fileUriStr, cachedName);
-    persistMapping(fileUriStr, cachedName);
-    return { dirName: cachedName, model: direct };
+  if (direct) {
+    log(`  direct hit: entries.json.resource=${direct.resource}`);
+    if (resourceMatches(direct.resource, fileUriStr)) {
+      dirNameCache.set(fileUriStr, cachedName);
+      persistMapping(fileUriStr, cachedName);
+      log(`  -> matched dir=${cachedName}`);
+      return { dirName: cachedName, model: direct };
+    }
+    log(`  resource mismatch, falling back to scan`);
+  } else {
+    log(`  no entries.json at ${cachedName}, falling back to scan`);
   }
 
-  // 2. Negative-cache short-circuit: don't repeatedly scan for files
-  //    that have no history (e.g. brand-new untracked files).
-  if (missingCache.has(fileUriStr)) return null;
+  // 2. Negative-cache short-circuit (TTL'd so new history is picked up).
+  const missAt = missingCache.get(fileUriStr);
+  if (missAt !== undefined && Date.now() - missAt < MISSING_TTL_MS) {
+    log(`  negative-cache hit (age=${Date.now() - missAt}ms), skipping scan`);
+    return null;
+  }
+  if (missAt !== undefined) missingCache.delete(fileUriStr);
 
   // 3. Dedupe concurrent scans.
   const existing = inflightScans.get(fileUriStr);
@@ -174,8 +233,10 @@ async function findHistoryDir(
     if (result) {
       dirNameCache.set(fileUriStr, result.dirName);
       persistMapping(fileUriStr, result.dirName);
+      log(`  scan resolved dir=${result.dirName}`);
     } else {
-      missingCache.add(fileUriStr);
+      missingCache.set(fileUriStr, Date.now());
+      log(`  scan found no match for ${fileUriStr}`);
     }
     return result;
   }).finally(() => {
@@ -191,11 +252,22 @@ export async function getLocalHistory(
   globalStorageUri: vscode.Uri | undefined,
   memento?: vscode.Memento,
 ): Promise<TimelineEntry[]> {
-  if (!globalStorageUri) return [];
+  if (!globalStorageUri) {
+    log(`getLocalHistory: no globalStorageUri, returning []`);
+    return [];
+  }
   hydrateIndex(memento);
   try {
     const historyRoot = vscode.Uri.joinPath(globalStorageUri, "..", "..", "History");
     const fileUriStr = uri.toString();
+
+    // Verify the root exists; surface a clear log line if not.
+    try {
+      await vscode.workspace.fs.stat(historyRoot);
+    } catch (e) {
+      log(`getLocalHistory: historyRoot does not exist: ${historyRoot.toString()} (${String(e)})`);
+      return [];
+    }
 
     const found = await findHistoryDir(historyRoot, fileUriStr);
     if (!found) return [];
@@ -215,9 +287,97 @@ export async function getLocalHistory(
         filePath: uri.fsPath,
       };
     });
-  } catch {
+  } catch (e) {
+    log(`getLocalHistory: unexpected error: ${String(e)}`);
     return [];
   }
+}
+
+/**
+ * Diagnostic helper invoked by the "Git Timewarp: Show Local History Diagnostics"
+ * command. Prints everything we need to debug missing local history into the
+ * output channel and reveals it.
+ */
+export async function runLocalHistoryDiagnostics(
+  uri: vscode.Uri,
+  globalStorageUri: vscode.Uri | undefined,
+): Promise<void> {
+  const ch = getOutputChannel();
+  ch.show(true);
+  ch.appendLine("");
+  ch.appendLine("=== Git Timewarp diagnostics ===");
+  ch.appendLine(`platform: ${process.platform}`);
+  ch.appendLine(`file fsPath: ${uri.fsPath}`);
+  ch.appendLine(`file uri:    ${uri.toString()}`);
+  ch.appendLine(`globalStorageUri: ${globalStorageUri?.toString() ?? "(undefined)"}`);
+  if (!globalStorageUri) return;
+
+  const historyRoot = vscode.Uri.joinPath(globalStorageUri, "..", "..", "History");
+  ch.appendLine(`historyRoot: ${historyRoot.toString()}`);
+  ch.appendLine(`historyRoot fsPath: ${historyRoot.fsPath}`);
+
+  try {
+    const stat = await vscode.workspace.fs.stat(historyRoot);
+    ch.appendLine(`historyRoot exists (type=${stat.type})`);
+  } catch (e) {
+    ch.appendLine(`historyRoot does NOT exist: ${String(e)}`);
+    return;
+  }
+
+  const fileUriStr = uri.toString();
+  const hashName = vscodeHistoryHash(fileUriStr);
+  ch.appendLine(`computed hash dir: ${hashName}`);
+
+  // Try the direct hash.
+  const direct = await tryReadEntries(historyRoot, hashName);
+  if (direct) {
+    ch.appendLine(`direct entries.json found at ${hashName}`);
+    ch.appendLine(`  stored resource: ${direct.resource}`);
+    ch.appendLine(`  match: ${resourceMatches(direct.resource, fileUriStr)}`);
+    ch.appendLine(`  entry count: ${direct.entries?.length ?? 0}`);
+  } else {
+    ch.appendLine(`no entries.json at hash ${hashName}; scanning...`);
+  }
+
+  // Full scan, looking for any entries.json whose resource references this file.
+  let children: [string, vscode.FileType][];
+  try {
+    children = await vscode.workspace.fs.readDirectory(historyRoot);
+  } catch (e) {
+    ch.appendLine(`readDirectory failed: ${String(e)}`);
+    return;
+  }
+  ch.appendLine(`scanning ${children.length} entries under historyRoot...`);
+
+  const fsPathLower = uri.fsPath.toLowerCase();
+  const matches: { name: string; resource: string; entries: number }[] = [];
+  for (const [name, type] of children) {
+    if (type !== vscode.FileType.Directory) continue;
+    const model = await tryReadEntries(historyRoot, name);
+    if (!model) continue;
+    let storedFsPath = "";
+    try {
+      storedFsPath = vscode.Uri.parse(model.resource).fsPath.toLowerCase();
+    } catch {
+      // ignore
+    }
+    if (
+      resourceMatches(model.resource, fileUriStr) ||
+      storedFsPath === fsPathLower
+    ) {
+      matches.push({ name, resource: model.resource, entries: model.entries?.length ?? 0 });
+    }
+  }
+
+  if (matches.length === 0) {
+    ch.appendLine(`no entries.json references this file. VS Code has no local history for it.`);
+  } else {
+    ch.appendLine(`found ${matches.length} matching dir(s):`);
+    for (const m of matches) {
+      ch.appendLine(`  dir=${m.name} entries=${m.entries} resource=${m.resource}`);
+    }
+  }
+  ch.appendLine("=== end diagnostics ===");
 }
 
 /** Read the file content stored at a local history entry's content URI. */

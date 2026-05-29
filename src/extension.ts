@@ -3,6 +3,7 @@ import { registerContentProvider } from "./editor/content-provider.js";
 import { navigateBack, navigateForward, returnToPresent } from "./commands/navigate.js";
 import { TimewarpWebviewPanel } from "./webview/timewarp-panel.js";
 import { invalidateHighlighter, disposeHighlighter } from "./webview/highlighter.js";
+import { runLocalHistoryDiagnostics } from "./history/local-history-provider.js";
 
 export function activate(context: vscode.ExtensionContext): void {
   // Register the timewarp: content provider
@@ -37,6 +38,16 @@ export function activate(context: vscode.ExtensionContext): void {
         filePath,
       );
       await panel.open(editor.viewColumn ?? vscode.ViewColumn.One, scrollLine);
+    }),
+    vscode.commands.registerCommand("gitTimewarp.showLocalHistoryDiagnostics", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.uri.scheme !== "file") {
+        vscode.window.showInformationMessage(
+          "Open a file on disk to run Git Timewarp diagnostics.",
+        );
+        return;
+      }
+      await runLocalHistoryDiagnostics(editor.document.uri, context.globalStorageUri);
     }),
   );
 }
