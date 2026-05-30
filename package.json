@@ -46,6 +46,22 @@
 			{
 				"command": "gitTimewarp.showLocalHistoryDiagnostics",
 				"title": "Git Timewarp: Show Local History Diagnostics"
+			},
+			{
+				"command": "gitTimewarp.webview.back",
+				"title": "Git Timewarp: Step Back (Webview)"
+			},
+			{
+				"command": "gitTimewarp.webview.forward",
+				"title": "Git Timewarp: Step Forward (Webview)"
+			},
+			{
+				"command": "gitTimewarp.webview.splitPresent",
+				"title": "Git Timewarp: Toggle Split View (Present)"
+			},
+			{
+				"command": "gitTimewarp.webview.splitPrevious",
+				"title": "Git Timewarp: Toggle Split View (Previous Commit)"
 			}
 		],
 		"keybindings": [
@@ -71,6 +87,30 @@
 				"key": "alt+t",
 				"mac": "alt+t",
 				"when": "editorTextFocus"
+			},
+			{
+				"command": "gitTimewarp.webview.back",
+				"key": "alt+,",
+				"mac": "alt+,",
+				"when": "activeWebviewPanelId == 'gitTimewarp.scrollView'"
+			},
+			{
+				"command": "gitTimewarp.webview.forward",
+				"key": "alt+.",
+				"mac": "alt+.",
+				"when": "activeWebviewPanelId == 'gitTimewarp.scrollView'"
+			},
+			{
+				"command": "gitTimewarp.webview.splitPresent",
+				"key": "alt+s",
+				"mac": "alt+s",
+				"when": "activeWebviewPanelId == 'gitTimewarp.scrollView'"
+			},
+			{
+				"command": "gitTimewarp.webview.splitPrevious",
+				"key": "alt+d",
+				"mac": "alt+d",
+				"when": "activeWebviewPanelId == 'gitTimewarp.scrollView'"
 			}
 		],
 		"configuration": {
@@ -99,6 +139,32 @@
 					"minimum": 0,
 					"maximum": 1000,
 					"description": "Debounce delay (ms) when navigating rapidly. Set to 0 for instant switching."
+				},
+				"gitTimewarp.splitPresentLayout": {
+					"type": "string",
+					"enum": [
+						"current-left",
+						"current-right"
+					],
+					"enumDescriptions": [
+						"Show the historical commit on the left and the present file on the right.",
+						"Show the present file on the left and the historical commit on the right."
+					],
+					"default": "current-left",
+					"description": "Panel order when comparing a historical commit against the present file."
+				},
+				"gitTimewarp.splitPreviousLayout": {
+					"type": "string",
+					"enum": [
+						"current-left",
+						"current-right"
+					],
+					"enumDescriptions": [
+						"Show the current commit on the left and the previous commit on the right.",
+						"Show the previous commit on the left and the current commit on the right."
+					],
+					"default": "current-left",
+					"description": "Panel order when comparing the current commit against its previous commit."
 				}
 			}
 		}

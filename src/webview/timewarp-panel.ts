@@ -13,12 +13,15 @@ import type {
   HighlightedLine,
   TimelineMode,
   SplitMode,
+  CommandMessage,
 } from "./messages.js";
 
 const PREF_TIMELINE_MODE = "gitTimewarp.timelineMode";
 const PREF_SPLIT_MODE = "gitTimewarp.splitMode";
 
 export class TimewarpWebviewPanel {
+  static activePanel: TimewarpWebviewPanel | null = null;
+
   private panel: vscode.WebviewPanel | null = null;
   private timeline: Timeline | null = null;
   private filePath: string;
@@ -90,6 +93,16 @@ export class TimewarpWebviewPanel {
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
+    // Track this as the active panel while it is visible
+    TimewarpWebviewPanel.activePanel = this;
+    this.panel.onDidChangeViewState(e => {
+      if (e.webviewPanel.visible) {
+        TimewarpWebviewPanel.activePanel = this;
+      } else if (TimewarpWebviewPanel.activePanel === this) {
+        TimewarpWebviewPanel.activePanel = null;
+      }
+    }, null, this.disposables);
+
     // Handle messages from webview
     this.panel.webview.onDidReceiveMessage(
       (msg) => this.handleMessage(msg),
@@ -113,6 +126,8 @@ export class TimewarpWebviewPanel {
       totalLocalEntries: this.localEntryCount,
       timelineMode: savedTimelineMode,
       splitMode: savedSplitMode,
+      splitPresentLayout: config.splitPresentLayout,
+      splitPreviousLayout: config.splitPreviousLayout,
     });
   }
 
@@ -163,6 +178,23 @@ export class TimewarpWebviewPanel {
       case "set-split-mode":
         void this.memento.update(PREF_SPLIT_MODE, msg.mode);
         break;
+      case "navigate-to-step": {
+        if (!this.timeline) break;
+        const target = msg.stepsBack;
+        if (target <= 0) {
+          this.timeline.jumpToPresent();
+          this.visibleStepsBack = 0;
+          const hl = await highlightCode(this.currentContent, this.getLanguageId());
+          await this.postToWebview({ type: "content", highlightedLines: hl, stepsBack: 0, diffLines: [] });
+        } else {
+          const entry = this.timeline.jumpTo(target);
+          if (entry) {
+            this.visibleStepsBack = target;
+            await this.showEntry(entry);
+          }
+        }
+        break;
+      }
       case "exit":
         this.dispose();
         // Re-open the original file
@@ -418,7 +450,14 @@ export class TimewarpWebviewPanel {
 	`;
   }
 
+  sendCommand(action: CommandMessage["action"]): void {
+    void this.postToWebview({ type: "command", action });
+  }
+
   dispose(): void {
+    if (TimewarpWebviewPanel.activePanel === this) {
+      TimewarpWebviewPanel.activePanel = null;
+    }
     this.panel?.dispose();
     this.panel = null;
     this.disposables.forEach((d) => d.dispose());

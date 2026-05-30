@@ -121,6 +121,16 @@ export class Timeline {
     this.cursor = -1;
   }
 
+  /** Jump directly to a specific position. stepsBack=0 means present. */
+  jumpTo(stepsBack: number): TimelineEntry | null {
+    if (stepsBack <= 0) {
+      this.cursor = -1;
+      return null;
+    }
+    this.cursor = Math.min(stepsBack - 1, this.entries.length - 1);
+    return this.entries[this.cursor] ?? null;
+  }
+
   /** Get the entry one step older than the current position (for diff comparison). */
   getOlderEntry(): TimelineEntry | null {
     const olderIdx = this.cursor + 1;

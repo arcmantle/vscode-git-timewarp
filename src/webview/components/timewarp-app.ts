@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import type { ToWebviewMessage, FromWebviewMessage, DeletedRange, HighlightedLine, TimelineMode } from "../messages.js";
+import type { ToWebviewMessage, FromWebviewMessage, DeletedRange, HighlightedLine, TimelineMode, SplitLayout } from "../messages.js";
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -27,6 +27,24 @@ interface MinimapMarker {
   type: "modified" | "deleted";
 }
 
+interface SearchMatch {
+  lineIndex: number;
+  charStart: number;
+  charEnd: number;
+}
+
+interface LineSearchMatch {
+  charStart: number;
+  charEnd: number;
+  globalIdx: number;
+}
+
+interface RenderSegment {
+  start: number;
+  end: number;
+  folded: boolean;
+}
+
 @customElement("timewarp-app")
 export class TimewarpApp extends LitElement {
   private vscode: VsCodeApi = acquireVsCodeApi();
@@ -48,7 +66,25 @@ export class TimewarpApp extends LitElement {
   @state() private boundaryText = "";
   @state() private boundaryVisible = false;
   @state() private timelinePct = 100;
-  @state() private timelineNodes: { pct: number; passed: boolean; current: boolean }[] = [];
+  @state() private timelineNodes: { pct: number; passed: boolean; current: boolean; stepsBack: number }[] = [];
+
+  private splitPresentLayout: SplitLayout = "current-left";
+  private splitPreviousLayout: SplitLayout = "current-left";
+
+  @state() private collapseUnchanged = false;
+  @state() private ignoreWhitespace = false;
+  @state() private expandedFolds: number[] = [];
+
+  @state() private searchVisible = false;
+  @state() private searchQuery = "";
+  @state() private searchMatches: SearchMatch[] = [];
+  @state() private searchCurrentIdx = -1;
+  @state() private searchCaseSensitive = false;
+  @state() private searchUseRegex = false;
+  @state() private searchRegexInvalid = false;
+
+  private searchMatchesByLine = new Map<number, LineSearchMatch[]>();
+  private currentStepsBack = 0;
 
   // Cached data from last content message for re-rendering on mode switch
   private lastHighlightedLines: HighlightedLine[] = [];
@@ -80,6 +116,8 @@ export class TimewarpApp extends LitElement {
         this.totalCommits = msg.totalCommits || 1;
         this.totalLocalEntries = msg.totalLocalEntries || 0;
         this.timelineMode = msg.timelineMode;
+        this.splitPresentLayout = msg.splitPresentLayout ?? "current-left";
+        this.splitPreviousLayout = msg.splitPreviousLayout ?? "current-left";
         this.lastHighlightedLines = msg.highlightedLines;
         this.lastDiffLines = [];
         this.lastBlame = {};
@@ -89,6 +127,7 @@ export class TimewarpApp extends LitElement {
         this.commitMessageText = "";
         this.commitAuthorText = "";
         this.timelinePct = 100;
+        this.currentStepsBack = 0;
         this.renderTimelineNodes(this.totalCommits);
         this.scrollLineOnInit = msg.scrollLine || 0;
         // Restore saved split-pane mode
@@ -102,6 +141,7 @@ export class TimewarpApp extends LitElement {
         this.lastDiffLines = msg.diffLines || [];
         this.lastBlame = msg.blame || {};
         this.lastDeletedRanges = msg.deletedRanges || [];
+        this.expandedFolds = [];
         const showDeletions = this.splitMode !== "previous" ? this.lastDeletedRanges : [];
         this.renderMainCode(msg.highlightedLines, this.lastDiffLines, this.lastBlame, showDeletions);
         if (msg.totalEntries !== undefined) {
@@ -118,8 +158,10 @@ export class TimewarpApp extends LitElement {
           this.commitMessageText = "";
           this.commitAuthorText = "";
           this.timelinePct = 100;
+          this.currentStepsBack = 0;
           if (msg.totalEntries === undefined) this.updateCurrentNode();
         } else {
+          this.currentStepsBack = msg.stepsBack;
           this.statusText = msg.stepsBack + " back \u00b7 " + msg.ago;
           this.commitMessageText = msg.commitMessage || "";
           this.commitAuthorText = msg.author || "";
@@ -135,18 +177,37 @@ export class TimewarpApp extends LitElement {
       case "boundary":
         this.showBoundary(msg.direction === "oldest" ? "Beginning of file history" : "At present");
         break;
+
+      case "command":
+        switch (msg.action) {
+          case "scroll-back": this.postMessage({ type: "scroll-back" }); break;
+          case "scroll-forward": this.postMessage({ type: "scroll-forward" }); break;
+          case "split-present": this.toggleSplit("present"); break;
+          case "split-previous": this.toggleSplit("previous"); break;
+        }
+        break;
     }
   };
 
   private handleKeydown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      this.postMessage({ type: "exit" });
+      if (this.searchVisible) {
+        this.closeSearch();
+      } else {
+        this.postMessage({ type: "exit" });
+      }
+      return;
     }
-    if (e.altKey && e.key === ",") {
+    if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+      e.preventDefault();
+      this.openSearch();
+      return;
+    }
+    if (e.altKey && e.key === "," && !this.searchVisible) {
       e.preventDefault();
       this.postMessage({ type: "scroll-back" });
     }
-    if (e.altKey && e.key === ".") {
+    if (e.altKey && e.key === "." && !this.searchVisible) {
       e.preventDefault();
       this.postMessage({ type: "scroll-forward" });
     }
@@ -187,6 +248,15 @@ export class TimewarpApp extends LitElement {
     }
   };
 
+  private handleTimelineClick = (e: MouseEvent) => {
+    const track = this.shadowRoot?.getElementById("timeline-track");
+    if (!track || this.totalCommits <= 0) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+    const stepsBack = Math.round(this.totalCommits * (1 - pct / 100));
+    this.postMessage({ type: "navigate-to-step", stepsBack });
+  };
+
   private toggleSplit(mode: "present" | "previous") {
     if (this.splitMode === mode) {
       this.splitMode = "";
@@ -195,6 +265,11 @@ export class TimewarpApp extends LitElement {
       this.renderMainCode(this.lastHighlightedLines, this.lastDiffLines, this.lastBlame, this.lastDeletedRanges);
       this.postMessage({ type: "set-split-mode", mode: "" });
     } else {
+      // If opening split view while at present, step back once so there's an immediate diff
+      if (this.currentStepsBack === 0 && this.totalCommits > 1) {
+        this.postMessage({ type: "scroll-back" });
+      }
+
       this.splitMode = mode;
       this.classList.add("split-view");
 
@@ -220,6 +295,52 @@ export class TimewarpApp extends LitElement {
         }
       });
     }
+  }
+
+  private getEffectiveDiffLines(): number[] {
+    if (!this.ignoreWhitespace || !this.splitLines.length) {
+      return this.lastDiffLines;
+    }
+    return this.lastDiffLines.filter(i => {
+      const main = this.mainLines[i]?.tokens.map(t => t.content).join("").replace(/\s+/g, " ").trim();
+      const split = this.splitLines[i]?.tokens.map(t => t.content).join("").replace(/\s+/g, " ").trim();
+      return main !== split;
+    });
+  }
+
+  private computeSegments(effectiveDiffLines: number[], totalLines: number): RenderSegment[] {
+    if (!this.collapseUnchanged || !effectiveDiffLines.length || totalLines === 0) {
+      return totalLines > 0 ? [{ start: 0, end: totalLines - 1, folded: false }] : [];
+    }
+    const CONTEXT = 3;
+    const visibleSet = new Set<number>();
+    for (const line of effectiveDiffLines) {
+      for (let c = Math.max(0, line - CONTEXT); c <= Math.min(totalLines - 1, line + CONTEXT); c++) {
+        visibleSet.add(c);
+      }
+    }
+    const segments: RenderSegment[] = [];
+    let segStart = 0;
+    let isVisible = visibleSet.has(0);
+    for (let i = 1; i < totalLines; i++) {
+      const currVisible = visibleSet.has(i);
+      if (currVisible !== isVisible) {
+        segments.push({ start: segStart, end: i - 1, folded: !isVisible && !this.expandedFolds.includes(segStart) });
+        segStart = i;
+        isVisible = currVisible;
+      }
+    }
+    segments.push({ start: segStart, end: totalLines - 1, folded: !isVisible && !this.expandedFolds.includes(segStart) });
+    return segments;
+  }
+
+  private expandFold(startLine: number) {
+    this.expandedFolds = [...this.expandedFolds, startLine];
+  }
+
+  private toggleCollapseUnchanged() {
+    this.collapseUnchanged = !this.collapseUnchanged;
+    if (!this.collapseUnchanged) this.expandedFolds = [];
   }
 
   private renderMainCode(
@@ -253,7 +374,10 @@ export class TimewarpApp extends LitElement {
     }));
     this.mainDeletions = deletions;
     this.computeMinimapMarkers(diffLines, deletedRanges);
-    this.syncPaneHeights();
+    if (this.searchQuery) {
+      this.searchCurrentIdx = 0;
+      this.computeSearchMatches();
+    }
   }
 
   private renderSplitCode(highlightedLines: HighlightedLine[], diffLines: number[]) {
@@ -264,7 +388,6 @@ export class TimewarpApp extends LitElement {
       diffRemoved: diffSet.has(i),
     }));
     this.computeSplitMinimapMarkers(diffLines || [], highlightedLines.length);
-    this.syncPaneHeights();
     // Sync scroll after split content renders
     this.updateComplete.then(() => {
       const historyScroll = this.shadowRoot?.getElementById("history-scroll");
@@ -277,7 +400,7 @@ export class TimewarpApp extends LitElement {
 
   private syncPaneHeights() {
     if (!this.splitMode) return;
-    this.updateComplete.then(() => {
+    requestAnimationFrame(() => {
       const codeEl = this.shadowRoot?.getElementById("code");
       const codeSplitEl = this.shadowRoot?.getElementById("code-split");
       if (!codeEl || !codeSplitEl) return;
@@ -376,7 +499,7 @@ export class TimewarpApp extends LitElement {
         ? i
         : Math.round(i * count / (nodesToRender - 1));
       const pct = (stopIdx / count) * 100;
-      nodes.push({ pct, passed: pct <= this.timelinePct, current: false });
+      nodes.push({ pct, passed: pct <= this.timelinePct, current: false, stepsBack: count - stopIdx });
     }
     this.timelineNodes = nodes;
     this.updateCurrentNode();
@@ -409,11 +532,16 @@ export class TimewarpApp extends LitElement {
     }, 1500);
   }
 
-  private scrollToLine(line: number) {
+  private scrollToLine(line: number, center = false) {
     const historyScroll = this.shadowRoot?.getElementById("history-scroll");
     if (!historyScroll) return;
     const lineHeight = parseFloat(getComputedStyle(this).lineHeight) || 21;
-    historyScroll.scrollTop = line * lineHeight;
+    const offset = line * lineHeight;
+    if (center) {
+      historyScroll.scrollTop = offset - historyScroll.clientHeight / 2 + lineHeight / 2;
+    } else {
+      historyScroll.scrollTop = offset;
+    }
   }
 
   private handleHistoryScroll = () => {
@@ -446,6 +574,138 @@ export class TimewarpApp extends LitElement {
       this.scrollLineOnInit = 0;
       requestAnimationFrame(() => this.scrollToLine(line));
     }
+    this.syncPaneHeights();
+  }
+
+  private openSearch() {
+    this.searchVisible = true;
+    this.updateComplete.then(() => {
+      const input = this.shadowRoot?.getElementById("search-input") as HTMLInputElement | null;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  private closeSearch() {
+    this.searchVisible = false;
+    this.searchQuery = "";
+    this.searchMatches = [];
+    this.searchCurrentIdx = -1;
+    this.searchMatchesByLine.clear();
+  }
+
+  private buildSearchRegex(): RegExp | null {
+    if (!this.searchQuery) return null;
+    try {
+      const pattern = this.searchUseRegex
+        ? this.searchQuery
+        : this.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const flags = this.searchCaseSensitive ? "g" : "gi";
+      return new RegExp(pattern, flags);
+    } catch {
+      return null;
+    }
+  }
+
+  private computeSearchMatches() {
+    if (!this.searchQuery) {
+      this.searchMatches = [];
+      this.searchCurrentIdx = -1;
+      this.searchMatchesByLine.clear();
+      this.searchRegexInvalid = false;
+      return;
+    }
+    const regex = this.buildSearchRegex();
+    if (!regex) {
+      this.searchRegexInvalid = this.searchUseRegex;
+      this.searchMatches = [];
+      this.searchCurrentIdx = -1;
+      this.searchMatchesByLine.clear();
+      return;
+    }
+    this.searchRegexInvalid = false;
+    const matches: SearchMatch[] = [];
+    const byLine = new Map<number, LineSearchMatch[]>();
+    for (let i = 0; i < this.mainLines.length; i++) {
+      const lineText = this.mainLines[i].tokens.map(t => t.content).join("");
+      regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(lineText)) !== null) {
+        if (m[0].length === 0) { regex.lastIndex++; continue; }
+        const charStart = m.index;
+        const charEnd = charStart + m[0].length;
+        const globalIdx = matches.length;
+        matches.push({ lineIndex: i, charStart, charEnd });
+        const arr = byLine.get(i) ?? [];
+        arr.push({ charStart, charEnd, globalIdx });
+        byLine.set(i, arr);
+      }
+    }
+    this.searchMatchesByLine = byLine;
+    this.searchMatches = matches;
+    if (matches.length === 0) {
+      this.searchCurrentIdx = -1;
+    } else if (this.searchCurrentIdx < 0) {
+      this.searchCurrentIdx = 0;
+    } else {
+      this.searchCurrentIdx = Math.min(this.searchCurrentIdx, matches.length - 1);
+    }
+  }
+
+  private toggleSearchCaseSensitive() {
+    this.searchCaseSensitive = !this.searchCaseSensitive;
+    this.computeSearchMatches();
+    if (this.searchMatches.length > 0) this.scrollToMatch(this.searchCurrentIdx);
+  }
+
+  private toggleSearchRegex() {
+    this.searchUseRegex = !this.searchUseRegex;
+    this.computeSearchMatches();
+    if (this.searchMatches.length > 0) this.scrollToMatch(this.searchCurrentIdx);
+  }
+
+  private handleSearchInput = (e: Event) => {
+    this.searchQuery = (e.target as HTMLInputElement).value;
+    this.searchCurrentIdx = 0;
+    this.computeSearchMatches();
+    if (this.searchMatches.length > 0) {
+      this.scrollToMatch(0);
+    }
+  };
+
+  private handleSearchKeydown = (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        this.searchPrev();
+      } else {
+        this.searchNext();
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeSearch();
+    }
+  };
+
+  private searchNext() {
+    if (this.searchMatches.length === 0) return;
+    this.searchCurrentIdx = (this.searchCurrentIdx + 1) % this.searchMatches.length;
+    this.scrollToMatch(this.searchCurrentIdx);
+  }
+
+  private searchPrev() {
+    if (this.searchMatches.length === 0) return;
+    this.searchCurrentIdx = (this.searchCurrentIdx - 1 + this.searchMatches.length) % this.searchMatches.length;
+    this.scrollToMatch(this.searchCurrentIdx);
+  }
+
+  private scrollToMatch(idx: number) {
+    const match = this.searchMatches[idx];
+    if (match) this.scrollToLine(match.lineIndex, true);
   }
 
   render() {
@@ -476,44 +736,33 @@ export class TimewarpApp extends LitElement {
             @click=${() => this.toggleSplit("previous")}
           >vs Previous</button>
         </span>
-        <span class="hint">Alt+Scroll · Escape to exit</span>
+        <span class="view-options">
+          <button
+            class=${this.collapseUnchanged ? "active" : ""}
+            title="Collapse unchanged regions"
+            @click=${() => this.toggleCollapseUnchanged()}
+          >⋟ Collapse</button>
+          <button
+            class=${this.ignoreWhitespace ? "active" : ""}
+            title="Ignore whitespace changes"
+            @click=${() => { this.ignoreWhitespace = !this.ignoreWhitespace; }}
+          >⎵ Whitespace</button>
+        </span>
+        <span class="hint">Alt+,/. · Alt+Scroll · Ctrl+F · Escape to exit</span>
       </div>
       <div id="timeline">
         <span id="timeline-label-left">oldest</span>
-        <div id="timeline-track">
+        <div id="timeline-track" @click=${this.handleTimelineClick}>
           <div id="timeline-line"></div>
           <div id="timeline-line-progress" style="width:${this.timelinePct}%"></div>
           ${this.timelineNodes.map(
-            (node) => html`<div class="timeline-node ${node.passed ? "passed" : ""} ${node.current ? "current" : ""}" style="left:${node.pct}%"></div>`,
+            (node) => html`<div class="timeline-node ${node.passed ? "passed" : ""} ${node.current ? "current" : ""}" style="left:${node.pct}%" @click=${(e: Event) => { e.stopPropagation(); this.postMessage({ type: "navigate-to-step", stepsBack: node.stepsBack }); }}></div>`,
           )}
         </div>
         <span id="timeline-label-right">now</span>
       </div>
       <div id="editors-wrapper">
-        <div class="editor-pane" id="split-pane">
-          <div class="pane-label">${this.splitLabelText}</div>
-          <div class="pane-body">
-            <div class="pane-scroll" id="split-scroll"
-              @wheel=${this.handleWheel}
-              @scroll=${this.handleSplitScroll}
-            >
-              <div class="code-block" id="code-split">${this.renderSplitLines()}</div>
-            </div>
-            <div class="minimap minimap-split">${this.renderMinimapMarkers(this.splitMinimapMarkers)}</div>
-          </div>
-        </div>
-        <div class="editor-pane" id="history-pane">
-          ${this.splitMode ? html`<div class="pane-label">Viewing</div>` : nothing}
-          <div class="pane-body">
-            <div class="pane-scroll" id="history-scroll"
-              @wheel=${this.handleWheel}
-              @scroll=${this.handleHistoryScroll}
-            >
-              <div class="code-block" id="code">${this.renderCodeLines()}</div>
-            </div>
-            <div class="minimap">${this.renderMinimapMarkers(this.minimapMarkers)}</div>
-          </div>
-        </div>
+        ${this.renderPanes()}
       </div>
       <div id="commit-bar">
         <span class="message">${this.commitMessageText}</span>
@@ -522,36 +771,162 @@ export class TimewarpApp extends LitElement {
       <div id="boundary-indicator" class=${this.boundaryVisible ? "visible" : ""}>
         ${this.boundaryText}
       </div>
+      ${this.searchVisible ? html`
+        <div id="search-bar">
+          <div class="search-input-group ${this.searchRegexInvalid ? 'invalid' : ''}">
+            <input
+              id="search-input"
+              type="text"
+              placeholder="Find..."
+              autocomplete="off"
+              spellcheck="false"
+              .value=${this.searchQuery}
+              @input=${this.handleSearchInput}
+              @keydown=${this.handleSearchKeydown}
+            />
+            <button
+              class="option-btn ${this.searchCaseSensitive ? 'active' : ''}"
+              title="Match Case"
+              @click=${() => this.toggleSearchCaseSensitive()}
+            >Aa</button>
+            <button
+              class="option-btn ${this.searchUseRegex ? 'active' : ''}"
+              title="Use Regular Expression"
+              @click=${() => this.toggleSearchRegex()}
+            >.*</button>
+          </div>
+          <span class="search-count ${this.searchQuery && this.searchMatches.length === 0 && !this.searchRegexInvalid ? 'no-results' : ''} ${this.searchRegexInvalid ? 'invalid-regex' : ''}">
+            ${this.searchRegexInvalid
+              ? "Invalid regex"
+              : this.searchMatches.length > 0
+                ? `${this.searchCurrentIdx + 1} of ${this.searchMatches.length}`
+                : this.searchQuery ? "No results" : ""}
+          </span>
+          <div class="search-nav-group">
+            <button @click=${this.searchPrev} title="Previous match (Shift+Enter)">↑</button>
+            <button @click=${this.searchNext} title="Next match (Enter)">↓</button>
+          </div>
+          <button class="search-close" @click=${this.closeSearch} title="Close (Escape)">✕</button>
+        </div>
+      ` : nothing}
     `;
   }
 
-  private renderCodeLines(): TemplateResult[] {
+  private renderPanes(): TemplateResult {
+    const layout = this.splitMode === "previous"
+      ? this.splitPreviousLayout
+      : this.splitPresentLayout;
+    const currentLeft = !this.splitMode || layout === "current-left";
+
+    const effectiveDiffLines = this.getEffectiveDiffLines();
+    const effectiveDiffSet = new Set(effectiveDiffLines);
+    const segments = this.computeSegments(effectiveDiffLines, this.mainLines.length);
+
+    // Build effective split diff set: filter diffRemoved by whitespace when needed
+    const effectiveSplitDiffSet = new Set(
+      this.splitLines
+        .map((l, i) => l.diffRemoved ? i : -1)
+        .filter(i => {
+          if (i < 0) return false;
+          if (!this.ignoreWhitespace) return true;
+          const splitText = this.splitLines[i].tokens.map(t => t.content).join("").replace(/\s+/g, " ").trim();
+          const mainText = this.mainLines[i]?.tokens.map(t => t.content).join("").replace(/\s+/g, " ").trim();
+          return splitText !== mainText;
+        })
+    );
+    const historyPane = html`
+      <div class="editor-pane" id="history-pane">
+        ${this.splitMode ? html`<div class="pane-label">Viewing</div>` : nothing}
+        <div class="pane-body">
+          <div class="pane-scroll" id="history-scroll"
+            @wheel=${this.handleWheel}
+            @scroll=${this.handleHistoryScroll}
+          >
+            <div class="code-block" id="code">${this.renderCodeLines(segments, effectiveDiffSet)}</div>
+          </div>
+          <div class="minimap">${this.renderMinimapMarkers(this.minimapMarkers)}</div>
+        </div>
+      </div>`;
+
+    const splitPane = html`
+      <div class="editor-pane" id="split-pane">
+        <div class="pane-label">${this.splitLabelText}</div>
+        <div class="pane-body">
+          <div class="pane-scroll" id="split-scroll"
+            @wheel=${this.handleWheel}
+            @scroll=${this.handleSplitScroll}
+          >
+            <div class="code-block" id="code-split">${this.renderSplitLines(segments, effectiveSplitDiffSet)}</div>
+          </div>
+          <div class="minimap minimap-split">${this.renderMinimapMarkers(this.splitMinimapMarkers)}</div>
+        </div>
+      </div>`;
+
+    return currentLeft
+      ? html`${historyPane}${splitPane}`
+      : html`${splitPane}${historyPane}`;
+  }
+
+  private renderCodeLines(segments: RenderSegment[], effectiveDiffSet: Set<number>): TemplateResult[] {
     const result: TemplateResult[] = [];
-    for (let i = 0; i < this.mainLines.length; i++) {
-      const deletedLines = this.mainDeletions.get(i);
-      if (deletedLines) {
-        for (const line of deletedLines) {
+    const foldedLines = new Set<number>();
+    for (const seg of segments) {
+      if (seg.folded) {
+        for (let i = seg.start; i <= seg.end; i++) foldedLines.add(i);
+      }
+    }
+    for (const seg of segments) {
+      if (seg.folded) {
+        result.push(html`<div class="fold-bar" @click=${() => this.expandFold(seg.start)}>↕ ${seg.end - seg.start + 1} unchanged line${seg.end - seg.start > 0 ? "s" : ""}</div>`);
+        continue;
+      }
+      for (let i = seg.start; i <= seg.end; i++) {
+        const deletedLines = this.mainDeletions.get(i);
+        if (deletedLines) {
+          for (const line of deletedLines) {
+            result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
+          }
+        }
+        if (i >= this.mainLines.length) continue;
+        const { tokens, blameText } = this.mainLines[i];
+        const diffChanged = effectiveDiffSet.has(i);
+        const lineSearchMatches = this.searchMatchesByLine.get(i);
+        const renderedTokens = lineSearchMatches
+          ? this.renderTokensWithSearch(tokens, lineSearchMatches)
+          : this.renderTokens(tokens);
+        result.push(html`<span class="line ${diffChanged ? "diff-changed" : ""}" data-line="${i + 1}"><span class="line-content">${renderedTokens}</span>${blameText ? html`<span class="blame-annotation">${blameText}</span>` : nothing}</span>`);
+      }
+    }
+    // Trailing deletions (only if last line is visible)
+    if (!foldedLines.has(this.mainLines.length - 1)) {
+      const trailingDeletions = this.mainDeletions.get(this.mainLines.length);
+      if (trailingDeletions) {
+        for (const line of trailingDeletions) {
           result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
         }
-      }
-      const { tokens, diffChanged, blameText } = this.mainLines[i];
-      result.push(html`<span class="line ${diffChanged ? "diff-changed" : ""}"><span class="line-content">${this.renderTokens(tokens)}</span>${blameText ? html`<span class="blame-annotation">${blameText}</span>` : nothing}</span>`);
-    }
-    // Trailing deletions
-    const trailingDeletions = this.mainDeletions.get(this.mainLines.length);
-    if (trailingDeletions) {
-      for (const line of trailingDeletions) {
-        result.push(html`<span class="deletion-indicator">${line || " "}</span>`);
       }
     }
     return result;
   }
 
-  private renderSplitLines(): TemplateResult[] {
-    return this.splitLines.map(
-      ({ tokens, diffRemoved }) =>
-        html`<span class="line ${diffRemoved ? "diff-removed" : ""}">${this.renderTokens(tokens)}</span>`,
-    );
+  private renderSplitLines(segments: RenderSegment[], effectiveSplitDiffSet: Set<number>): TemplateResult[] {
+    const result: TemplateResult[] = [];
+    for (const seg of segments) {
+      if (seg.folded) {
+        result.push(html`<div class="fold-bar inert">\u2195 ${seg.end - seg.start + 1} unchanged line${seg.end - seg.start > 0 ? "s" : ""}</div>`);
+        continue;
+      }
+      for (let i = seg.start; i <= seg.end; i++) {
+        if (i >= this.splitLines.length) {
+          result.push(html`<span class="line"> </span>`);
+          continue;
+        }
+        const { tokens } = this.splitLines[i];
+        const diffRemoved = effectiveSplitDiffSet.has(i);
+        result.push(html`<span class="line ${diffRemoved ? "diff-removed" : ""}" data-line="${i + 1}">${this.renderTokens(tokens)}</span>`);
+      }
+    }
+    return result;
   }
 
   private renderTokens(tokens: HighlightedLine): TemplateResult[] {
@@ -560,6 +935,49 @@ export class TimewarpApp extends LitElement {
         ? html`<span style="color:${t.color}">${t.content}</span>`
         : html`${t.content}`,
     );
+  }
+
+  private renderTokensWithSearch(tokens: HighlightedLine, lineMatches: LineSearchMatch[]): TemplateResult[] {
+    const result: TemplateResult[] = [];
+    const breakpoints = new Set<number>();
+    for (const m of lineMatches) {
+      breakpoints.add(m.charStart);
+      breakpoints.add(m.charEnd);
+    }
+    const isMatchAt = (pos: number): { isMatch: boolean; isCurrent: boolean } => {
+      for (const m of lineMatches) {
+        if (pos >= m.charStart && pos < m.charEnd) {
+          return { isMatch: true, isCurrent: m.globalIdx === this.searchCurrentIdx };
+        }
+      }
+      return { isMatch: false, isCurrent: false };
+    };
+    let charPos = 0;
+    for (const token of tokens) {
+      let tokenPos = 0;
+      while (tokenPos < token.content.length) {
+        const absPos = charPos + tokenPos;
+        let nextBreak = token.content.length;
+        for (const bp of breakpoints) {
+          const rel = bp - charPos;
+          if (rel > tokenPos && rel < nextBreak) nextBreak = rel;
+        }
+        const chunk = token.content.slice(tokenPos, nextBreak);
+        const { isMatch, isCurrent } = isMatchAt(absPos);
+        if (isMatch) {
+          result.push(token.color
+            ? html`<span class="search-match ${isCurrent ? "current" : ""}" style="color:${token.color}">${chunk}</span>`
+            : html`<span class="search-match ${isCurrent ? "current" : ""}">${chunk}</span>`);
+        } else {
+          result.push(token.color
+            ? html`<span style="color:${token.color}">${chunk}</span>`
+            : html`${chunk}`);
+        }
+        tokenPos = nextBreak;
+      }
+      charPos += token.content.length;
+    }
+    return result;
   }
 
   private renderMinimapMarkers(markers: MinimapMarker[]): TemplateResult[] {
@@ -665,6 +1083,34 @@ export class TimewarpApp extends LitElement {
       color: var(--vscode-button-foreground, #fff);
     }
 
+    #status-bar .view-options {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    #status-bar .view-options button {
+      background: none;
+      border: 1px solid var(--vscode-button-border, #555);
+      color: var(--vscode-foreground, #ccc);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s;
+    }
+
+    #status-bar .view-options button:hover {
+      background: var(--vscode-toolbar-hoverBackground, rgba(90,93,94,0.31));
+    }
+
+    #status-bar .view-options button.active {
+      background: var(--vscode-button-background, #0e639c);
+      border-color: var(--vscode-button-background, #0e639c);
+      color: var(--vscode-button-foreground, #fff);
+    }
+
     #status-bar .hint {
       margin-left: auto;
       opacity: 0.5;
@@ -723,6 +1169,7 @@ export class TimewarpApp extends LitElement {
       display: flex;
       align-items: center;
       overflow: visible;
+      cursor: pointer;
     }
 
     #timeline-line {
@@ -756,6 +1203,11 @@ export class TimewarpApp extends LitElement {
       transform: translate(-50%, -50%);
       transition: all 120ms ease-out;
       z-index: 1;
+      cursor: pointer;
+    }
+
+    .timeline-node:hover {
+      transform: translate(-50%, -50%) scale(1.5);
     }
 
     .timeline-node.passed {
@@ -851,7 +1303,6 @@ export class TimewarpApp extends LitElement {
     }
 
     .code-block {
-      counter-reset: line;
       padding: 0;
       min-width: fit-content;
     }
@@ -874,8 +1325,7 @@ export class TimewarpApp extends LitElement {
     }
 
     .line::before {
-      content: counter(line);
-      counter-increment: line;
+      content: attr(data-line);
       position: absolute;
       left: 3px;
       width: 48px;
@@ -931,6 +1381,7 @@ export class TimewarpApp extends LitElement {
       padding: 0 8px;
       flex-shrink: 0;
       background: var(--vscode-editor-background, #1e1e1e);
+      user-select: none;
     }
 
     .minimap-marker-removed {
@@ -980,6 +1431,149 @@ export class TimewarpApp extends LitElement {
 
     #boundary-indicator.visible {
       opacity: 1;
+    }
+
+    .fold-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 20px;
+      background: var(--vscode-diffEditor-unchangedRegionBackground, rgba(0,0,0,0.2));
+      color: var(--vscode-descriptionForeground, #888);
+      font-size: 11px;
+      cursor: pointer;
+      user-select: none;
+      border-top: 1px solid var(--vscode-editorGroup-border, #333);
+      border-bottom: 1px solid var(--vscode-editorGroup-border, #333);
+      white-space: nowrap;
+      min-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .fold-bar:hover:not(.inert) {
+      background: var(--vscode-toolbar-hoverBackground, rgba(90,93,94,0.31));
+      color: var(--vscode-foreground, #ccc);
+    }
+
+    .fold-bar.inert {
+      cursor: default;
+      pointer-events: none;
+    }
+
+    #search-bar {
+      position: fixed;
+      top: 62px;
+      right: 22px;
+      background: var(--vscode-editorWidget-background, #252526);
+      border: 1px solid var(--vscode-editorWidget-border, #454545);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 3px 4px;
+      z-index: 150;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    .search-input-group {
+      display: flex;
+      align-items: center;
+      background: var(--vscode-input-background, #3c3c3c);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 2px;
+      padding-right: 2px;
+    }
+
+    .search-input-group:focus-within {
+      border-color: var(--vscode-focusBorder, #007fd4);
+    }
+
+    .search-input-group.invalid {
+      border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+    }
+
+    #search-input {
+      background: transparent;
+      color: var(--vscode-input-foreground, #cccccc);
+      border: none;
+      padding: 3px 6px;
+      font-size: 13px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      width: 200px;
+      outline: none;
+    }
+
+    .search-nav-group {
+      display: flex;
+      align-items: center;
+      margin-left: 2px;
+    }
+
+    .search-count {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground, #888);
+      white-space: nowrap;
+      min-width: 64px;
+      text-align: center;
+      padding: 0 4px;
+    }
+
+    .search-count.no-results {
+      color: var(--vscode-inputValidation-errorForeground, #f48771);
+    }
+
+    .search-count.invalid-regex {
+      color: var(--vscode-inputValidation-errorForeground, #f48771);
+    }
+
+    #search-bar button {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--vscode-foreground, #ccc);
+      cursor: pointer;
+      padding: 0;
+      border-radius: 3px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    #search-bar button:hover {
+      background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+      border-color: var(--vscode-toolbar-hoverBackground, transparent);
+    }
+
+    .search-close {
+      margin-left: 2px;
+    }
+
+    .option-btn {
+      font-size: 10px !important;
+      font-family: var(--vscode-editor-font-family, monospace);
+      letter-spacing: -0.5px;
+    }
+
+    .option-btn.active {
+      background: var(--vscode-inputOption-activeBackground, rgba(0, 127, 212, 0.4)) !important;
+      border-color: var(--vscode-inputOption-activeBorder, #007fd4) !important;
+      color: var(--vscode-inputOption-activeForeground, #ffffff) !important;
+    }
+
+    .search-match {
+      background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 198, 0, 0.3));
+      border-radius: 2px;
+      outline: 1px solid var(--vscode-editor-findMatchHighlightBorder, transparent);
+      outline-offset: -1px;
+    }
+
+    .search-match.current {
+      background: var(--vscode-editor-findMatchBackground, rgba(255, 140, 0, 0.65));
+      outline-color: var(--vscode-editor-findMatchBorder, #d2b100);
     }
   `;
 }

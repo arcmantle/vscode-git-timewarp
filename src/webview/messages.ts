@@ -12,7 +12,8 @@ export type ToWebviewMessage =
   | InitMessage
   | ContentMessage
   | SplitContentMessage
-  | BoundaryMessage;
+  | BoundaryMessage
+  | CommandMessage;
 
 export interface InitMessage {
   type: "init";
@@ -25,6 +26,9 @@ export interface InitMessage {
   /** Restored UI preferences from previous session. */
   timelineMode: TimelineMode;
   splitMode: SplitMode;
+  /** Which side the current (history) pane appears on in each split mode. */
+  splitPresentLayout: SplitLayout;
+  splitPreviousLayout: SplitLayout;
 }
 
 export interface ContentMessage {
@@ -52,6 +56,11 @@ export interface BoundaryMessage {
   direction: "oldest" | "newest";
 }
 
+export interface CommandMessage {
+  type: "command";
+  action: "split-present" | "split-previous" | "scroll-back" | "scroll-forward";
+}
+
 /** Messages sent from the webview to the extension host. */
 export type FromWebviewMessage =
   | { type: "scroll-back" }
@@ -60,10 +69,12 @@ export type FromWebviewMessage =
   | { type: "request-previous" }
   | { type: "set-timeline-mode"; mode: TimelineMode }
   | { type: "set-split-mode"; mode: SplitMode }
+  | { type: "navigate-to-step"; stepsBack: number }
   | { type: "exit" };
 
 export type TimelineMode = "git" | "local";
 export type SplitMode = "" | "present" | "previous";
+export type SplitLayout = "current-left" | "current-right";
 
 export interface DeletedRange {
   afterLine: number;

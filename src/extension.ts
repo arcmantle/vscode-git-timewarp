@@ -49,6 +49,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       await runLocalHistoryDiagnostics(editor.document.uri, context.globalStorageUri);
     }),
+    vscode.commands.registerCommand("gitTimewarp.webview.back", () => {
+      TimewarpWebviewPanel.activePanel?.sendCommand("scroll-back");
+    }),
+    vscode.commands.registerCommand("gitTimewarp.webview.forward", () => {
+      TimewarpWebviewPanel.activePanel?.sendCommand("scroll-forward");
+    }),
+    vscode.commands.registerCommand("gitTimewarp.webview.splitPresent", () => {
+      TimewarpWebviewPanel.activePanel?.sendCommand("split-present");
+    }),
+    vscode.commands.registerCommand("gitTimewarp.webview.splitPrevious", () => {
+      TimewarpWebviewPanel.activePanel?.sendCommand("split-previous");
+    }),
   );
 }
 
