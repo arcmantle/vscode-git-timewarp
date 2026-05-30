@@ -41,7 +41,8 @@
 			},
 			{
 				"command": "gitTimewarp.enterTimewarpView",
-				"title": "Git Timewarp: Enter Scroll Mode"
+				"title": "Git Timewarp: Enter Scroll Mode",
+				"icon": "media/icon-color-square.png"
 			},
 			{
 				"command": "gitTimewarp.showLocalHistoryDiagnostics",
@@ -167,6 +168,15 @@
 					"description": "Panel order when comparing the current commit against its previous commit."
 				}
 			}
+		},
+		"menus": {
+			"editor/title": [
+				{
+					"command": "gitTimewarp.enterTimewarpView",
+					"when": "resourceScheme == file",
+					"group": "navigation"
+				}
+			]
 		}
 	},
 	"scripts": {
